@@ -10,6 +10,7 @@ Endpoints detected by the agent will only have the Path and the HTTP Method ( if
 
 ## Build
 Requires Java 8
+
 To build run 
 ```
 mvn clean install
