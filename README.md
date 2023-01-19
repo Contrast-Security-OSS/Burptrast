@@ -9,10 +9,13 @@ The full HTTP Request that generated the Vulnerability is stored in TS and is av
 Endpoints detected by the agent will only have the Path and the HTTP Method ( if you are lucky ). But you are more likely to get all of the endpoints for this application. Hopefully more endpoint information can be gathered by the agent in the future.
 
 ## Build
+Requires Java 8
 To build run 
 ```
 mvn clean install
 ```
+
+
 Import the jar file named Burptrast-1.0-SNAPSHOT-jar-with-dependencies.jar into Burp as an extension.
 
 ### Teamserver API Credentials
