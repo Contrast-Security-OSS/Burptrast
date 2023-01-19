@@ -1,0 +1,5 @@
+api:
+  url: https://example.contrastsecurity.com/Contrast
+  api_key: aaabbbccc
+  service_key: aaabbbcccddd
+  user_name: aaabbbccc@ContrastSecurity
