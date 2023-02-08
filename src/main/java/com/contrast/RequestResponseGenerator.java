@@ -1,18 +1,27 @@
 package com.contrast;
 
 import burp.IHttpRequestResponse;
-import com.contrast.HttpService;
-import com.contrast.RequestResponse;
 import com.contrast.model.RouteCoverageObservationResource;
 import com.contrastsecurity.models.HttpRequestResponse;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
+/**
+ * Converts Contrast's Endpoint Objects into the IHttpRequestResponse objects used by Burp's Sitemap.
+ *
+ */
 public class RequestResponseGenerator {
 
 
-    public IHttpRequestResponse getReqRes(RouteCoverageObservationResource resource, HttpService service) {
+    /**
+     * Converts the RouteCoverage data, along with the manually configured HttpService into example
+     * IHttpRequestResponse objects used by Burp.
+     * @param resource
+     * @param service
+     * @return
+     */
+    public IHttpRequestResponse getReqResForRouteCoverage(RouteCoverageObservationResource resource, HttpService service) {
         String path = resource.getUrl();
         String verb = resource.getVerb();
         if(verb==null||verb.isEmpty()) {
@@ -30,7 +39,13 @@ public class RequestResponseGenerator {
         return reqRes;
     }
 
-    public Optional<IHttpRequestResponse> getReqRes(HttpRequestResponse hreqRes,HttpService service) {
+    /**
+     * Converts Contrast's HttpRequestResponse from trace data to Burps sitemap object
+     * @param hreqRes
+     * @param service
+     * @return
+     */
+    public Optional<IHttpRequestResponse> getReqResForTrace(HttpRequestResponse hreqRes, HttpService service) {
         if(hreqRes.getHttpRequest()!=null) {
             RequestResponse reqRes = new RequestResponse();
             reqRes.setHttpService(service);
