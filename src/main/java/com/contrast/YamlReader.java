@@ -1,6 +1,7 @@
 package com.contrast;
 
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -20,9 +21,8 @@ import java.util.Optional;
  */
 public class YamlReader {
 
-
     public Optional<TSCreds> parseContrastYaml(File contrastFile) throws IOException {
-        Yaml yaml = new Yaml();
+        Yaml yaml = new Yaml(new SafeConstructor());
         try(FileInputStream fis = new FileInputStream(contrastFile)) {
             Map<String,Object> results = yaml.load(fis);
             if(results.containsKey("api")&&results.get("api")!=null) {
