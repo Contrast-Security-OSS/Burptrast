@@ -8,8 +8,17 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Reads the credentials file, this file contains the credentials required to authenticate with the TeamServer.
+ * The credentials file has the format.
+ * api:
+ *   url: https://example.contrastsecurity.com/Contrast
+ *   api_key: aaabbbccc
+ *   service_key: aaabbbcccddd
+ *   user_name: aaabbbccc@OrgName
+ *
+ */
 public class YamlReader {
-
 
 
     public Optional<TSCreds> parseContrastYaml(File contrastFile) throws IOException {
