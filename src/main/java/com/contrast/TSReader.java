@@ -1,14 +1,21 @@
 package com.contrast;
 
+import burp.DataModel;
 import com.contrast.model.RouteCoverage;
 import com.contrast.model.Routes;
+import com.contrast.model.TraceIDDecoractedHttpRequestResponse;
+import com.contrastsecurity.exceptions.ContrastException;
 import com.contrastsecurity.http.ServerFilterForm;
+import com.contrastsecurity.http.TraceFilterForm;
 import com.contrastsecurity.models.Application;
 import com.contrastsecurity.models.HttpRequestResponse;
 import com.contrastsecurity.models.Organization;
 import com.contrastsecurity.models.Server;
+import com.contrastsecurity.models.Servers;
+import com.contrastsecurity.models.StoryResponse;
 import com.contrastsecurity.models.Trace;
 import com.contrastsecurity.models.TraceFilterBody;
+import com.contrastsecurity.models.Traces;
 import com.contrastsecurity.sdk.ContrastSDK;
 import com.contrastsecurity.sdk.internal.GsonFactory;
 import com.google.gson.Gson;
@@ -19,6 +26,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -36,15 +44,17 @@ public class TSReader {
     private final TSCreds creds;
     private final Logger logger;
     private final ContrastSDK contrastSDK;
+    private final DataModel dataModel;
 
     private ExecutorService executor = Executors.newFixedThreadPool(6);
 
     private Gson gson = GsonFactory.create();
 
 
-    public TSReader(TSCreds creds, Logger logger ) {
+    public TSReader(TSCreds creds, Logger logger, DataModel dataModel) {
         this.creds = creds;
         this.logger = logger;
+        this.dataModel = dataModel;
         contrastSDK = new ContrastSDK.Builder(creds.getUserName(), creds.getServiceKey(), creds.getApiKey())
                 .withApiUrl(creds.getUrl()+"/api")
                 .build();
@@ -55,7 +65,7 @@ public class TSReader {
      * @return
      * @throws IOException
      */
-    public List<Organization> getOrgs() throws IOException {
+    public List<Organization> getOrgs() throws IOException, ContrastException {
         logger.logMessage("get orgs");
         List<Organization> orgs =  getSDK().getProfileOrganizations().getOrganizations();
         logger.logMessage("found" + orgs.size() +" orgs");
@@ -68,7 +78,7 @@ public class TSReader {
      * @return
      * @throws IOException
      */
-    public List<Server> getServers(String orgID) throws IOException {
+    public List<Server> getServers(String orgID) throws IOException,ContrastException {
         return getSDK().getServers(orgID, new ServerFilterForm()).getServers();
     }
 
@@ -79,7 +89,7 @@ public class TSReader {
      * @return
      * @throws IOException
      */
-    public Optional<Server> getServerForName(String orgID, String appName) throws IOException {
+    public Optional<Server> getServerForName(String orgID, String appName) throws IOException,ContrastException {
         List<Server> servers = getServers(orgID);
         return servers.stream().filter(server -> appName.equals(server.getName())).findFirst();
     }
@@ -91,7 +101,7 @@ public class TSReader {
      * @return
      * @throws IOException
      */
-    public List<Trace> getTraces(String orgID, String appId) throws IOException {
+    public List<Trace> getTraces(String orgID, String appId) throws IOException, ContrastException {
         logger.logMessage("get traces for orgid : " + orgID + " appid " + appId);
 
         TraceFilterBody body = new TraceFilterBody();
@@ -107,7 +117,7 @@ public class TSReader {
      * @return
      * @throws IOException
      */
-    public Optional<Routes> getRoutes(String orgID, String appID) throws IOException {
+    public Optional<Routes> getRoutes(String orgID, String appID) throws IOException,ContrastException {
         logger.logMessage("get routes for orgid : " + orgID + " appid " + appID);
 
         String url = creds.getUrl()+"/api/ng/%s/applications/%s/route";
@@ -156,7 +166,8 @@ public class TSReader {
                         result =  Optional.of(gson.fromJson(body,RouteCoverage.class));
                     }
                 }
-            } catch (IOException e) {
+            } catch (IOException |ContrastException e) {
+                logger.logException("unable to get coverage for trace",e);
                 throw new RuntimeException(e);
             } finally {
                 if(connection!=null) {
@@ -176,11 +187,12 @@ public class TSReader {
      * @param traceID
      * @return
      */
-    public Future<HttpRequestResponse> getHttpRequest(String orgID, String traceID) {
+    public Future<TraceIDDecoractedHttpRequestResponse> getHttpRequest(String orgID, String traceID) {
         return executor.submit(() -> {
             try {
-                return getSDK().getHttpRequest(orgID,traceID);
-            } catch (IOException e) {
+                return new TraceIDDecoractedHttpRequestResponse(traceID,getSDK().getHttpRequest(orgID,traceID));
+            } catch (IOException |ContrastException e) {
+                logger.logException("unable to get HTTP Request for trace " ,e);
                 throw new RuntimeException(e);
             }
         });
@@ -200,7 +212,34 @@ public class TSReader {
         List<Application> sortedApps = new ArrayList<>(applications);
         sortedApps.sort(Comparator.comparingLong(Application::getLastSeen).reversed());
         logger.logMessage("found "+sortedApps.size() + " applications" );
+        dataModel.setApplications(applications);
         return sortedApps;
+    }
+
+    public StoryResponse getStory(String orgID, String traceID) throws IOException {
+        return getSDK().getStory(orgID,traceID);
+    }
+
+    public Optional<Long> getServerIDFromAppID(String appID, String orgId, TSReader reader) {
+        logger.logMessage("get server for orgid : " + orgId +" and appid : " + appID);
+
+        if (dataModel.getAppToServerMap().containsKey(appID)) {
+            logger.logMessage("got server id from cache");
+            return Optional.of(dataModel.getAppToServerMap().get(appID));
+        } else {
+            ServerFilterForm filterForm = new ServerFilterForm();
+            filterForm.setApplicationIds(Arrays.asList(appID));
+            try {
+                Servers servers = reader.getSDK().getServersWithFilter(orgId, filterForm);
+                if(servers!=null && servers.getServers()!=null && !servers.getServers().isEmpty()) {
+                    dataModel.getAppToServerMap().put(appID,servers.getServers().get(0).getServerId());
+                    return Optional.of(dataModel.getAppToServerMap().get(appID));
+                }
+            } catch (IOException e) {
+                logger.logException("unable to get server id",e);
+            }
+            return Optional.empty();
+        }
     }
 
 

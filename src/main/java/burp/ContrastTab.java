@@ -1,8 +1,9 @@
 package burp;
 
-import com.contrast.HttpService;
 import com.contrast.Logger;
-import com.contrast.RequestResponseGenerator;
+import com.contrast.SortByAppNameComparator;
+import com.contrast.SortByLastSeenComparator;
+import com.contrast.SortType;
 import com.contrast.TSCreds;
 import com.contrast.TSReader;
 import com.contrast.YamlReader;
@@ -10,23 +11,33 @@ import com.contrast.model.Route;
 import com.contrast.model.RouteCoverage;
 import com.contrast.model.RouteCoverageObservationResource;
 import com.contrast.model.Routes;
+import com.contrast.model.TraceIDDecoractedHttpRequestResponse;
+import com.contrastsecurity.exceptions.ContrastException;
 import com.contrastsecurity.models.Application;
+import com.contrastsecurity.models.Chapter;
 import com.contrastsecurity.models.HttpRequestResponse;
 import com.contrastsecurity.models.Organization;
+import com.contrastsecurity.models.Story;
+import com.contrastsecurity.models.StoryResponse;
 import com.contrastsecurity.models.Trace;
 
 import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
@@ -38,28 +49,23 @@ public class ContrastTab implements ITab{
 
     public ContrastTab(IBurpExtenderCallbacks callbacks) {
         this.callbacks = callbacks;
-        logger = new Logger( new PrintWriter(callbacks.getStdout(), true),new PrintWriter(callbacks.getStderr(), true));
+        logger = new Logger( new PrintWriter(callbacks.getStdout(), true),
+                new PrintWriter(callbacks.getStderr(), true)
+        );
     }
+
+    public static String[] ROUTE_TABLE_COL_NAMES = {"Selected","Path", "Verb", "From Vuln","Last Exercised"};
+
+    public static String[] TRACE_TABLE_COL_NAMES = {"Name","Rule","Severity"};
+
+
 
     private final IBurpExtenderCallbacks callbacks;
     private static Logger logger;
-    private TextField portNumberField;
-    private TextField hostNameField;
-    private static JComboBox<String> protocolCombo;
-    private static JComboBox<String> orgsCombo;
-    private static JComboBox<String> appCombo;
-    private static JButton importRoutesButton;
-    private static JButton orgIdButton;
-    private static JButton appButton;
-    private static JButton updateButton;
-    private static JTable traceTable;
-    private static JTable routeTable;
-    private static DefaultTableModel routeTableModel;
-    private static final Map<Route,Optional<RouteCoverage>> routeCoverageMap = new HashMap<>();
-    private static final List<HttpRequestResponse> vulnRequests = new ArrayList<>();
-    private static File credsFile = null;
-    private static final Map<String,String> appNameIDMap = new HashMap<>();
-    private List<Trace> traces = new ArrayList<>();
+
+    private static final DataModel dataModel = new DataModel();
+
+
 
     @Override
     public String getTabCaption() {
@@ -68,6 +74,7 @@ public class ContrastTab implements ITab{
 
     @Override
     public Component getUiComponent() {
+
         JPanel panel = new JPanel(new BorderLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         JPanel firstLine = new JPanel(new GridBagLayout());
@@ -84,6 +91,7 @@ public class ContrastTab implements ITab{
         appConfig.setBorder(BorderFactory.createTitledBorder("Application Configuration"));
         addOrgsDropDown(appConfig,gbc);
         addApplicationDropDown(appConfig,gbc);
+        addApplicationSortRadioButtons(appConfig,gbc);
         firstLine.add(appConfig);
         addUpdateButton(appConfig);
         panel.add(firstLine,BorderLayout.BEFORE_FIRST_LINE);
@@ -108,6 +116,8 @@ public class ContrastTab implements ITab{
         return panel;
     }
 
+
+
     /**
      * updates the route table called on Update Button press.
      * This is likely to be the slowest of all calls. As it requires multiple API Requests to populate the route table.
@@ -131,29 +141,84 @@ public class ContrastTab implements ITab{
             }
             for(Route route : routeFutureMap.keySet()) {
                 Optional<RouteCoverage> result = routeFutureMap.get(route).get();
-                routeCoverageMap.put(route,result);
+                dataModel.getRouteCoverageMap().put(route,result);
                 if(result.isPresent() ) {
                     for(RouteCoverageObservationResource observationResource : result.get().getObservations() ) {
-                        routeTableModel.addRow(new Object[]{observationResource.getUrl(),observationResource.getVerb(),false});
+                        dataModel.getRouteTableModel().addRow(new Object[]{true,observationResource.getUrl(),observationResource.getVerb(),false,getLastExercisedDate(route)});
                     }
                 }
             }
         }
-        List<Future<HttpRequestResponse>> futureReqResponses = new ArrayList<>();
-        for (Trace trace : traces) {
+        List<Future<TraceIDDecoractedHttpRequestResponse>> futureReqResponses = new ArrayList<>();
+        for (Trace trace : dataModel.getTraces()) {
             futureReqResponses.add(reader.getHttpRequest(orgID,trace.getUuid()));
         }
-        for(Future<HttpRequestResponse> futureReqRes : futureReqResponses) {
-            HttpRequestResponse hreqRes = futureReqRes.get();
-            vulnRequests.add(hreqRes);
+        for(Future<TraceIDDecoractedHttpRequestResponse> futureReqRes : futureReqResponses) {
+            HttpRequestResponse hreqRes = futureReqRes.get().getRequestResponse();
+            dataModel.getVulnRequests().add(futureReqRes.get());
+            Optional<VulnTableResult> vulnTableResult = getVulnTableResult(hreqRes);
+            if(vulnTableResult.isPresent()) {
+                dataModel.getRouteTableModel().addRow(new Object[]{true,vulnTableResult.get().getUrl(), vulnTableResult.get().getVerb(), true,""});
+
+            }
             if(hreqRes.getHttpRequest()!=null) {
                 String text = hreqRes.getHttpRequest().getText();
                 if(text.contains(" ")&&text.contains(" HTTP")) {
                     String verb = text.split(" ")[0];
                     String url = text.substring(text.indexOf(" ")).split(" HTTP")[0];
-                    routeTableModel.addRow(new Object[]{url, verb, true});
                 }
             }
+        }
+        for(PathTracePair pathTracePair : getPathsFromNonRequestVulns(orgID,reader)) {
+            String path = pathTracePair.getPath();
+            boolean isFound = false;
+            for( int i = 0; i < dataModel.getRouteTableModel().getRowCount(); i++) {
+                String tablePath = dataModel.getRouteTableModel().getValueAt(i,1).toString();
+                if(tablePath.equals(path)) {
+                    isFound = true;
+                    break;
+                }
+            }
+            if(!isFound) {
+                dataModel.getRouteTableModel().addRow(new Object[]{true,path, "", true,""});
+            }
+            addNonRequestVulnToMap(path,pathTracePair.getTrace());
+        }
+
+    }
+
+    private void addNonRequestVulnToMap(String path,Trace trace) {
+        if(dataModel.getNonRequestPathVulnMap().containsKey(path)) {
+            dataModel.getNonRequestPathVulnMap().get(path).add(trace);
+        } else {
+            Set<Trace> traceSet = new HashSet<>();
+            traceSet.add(trace);
+            dataModel.getNonRequestPathVulnMap().put(path,traceSet);
+        }
+    }
+
+
+    private Optional<VulnTableResult> getVulnTableResult(HttpRequestResponse hreqRes) {
+        if(hreqRes.getHttpRequest()!=null) {
+            String text = hreqRes.getHttpRequest().getText();
+            if(text.contains(" ")&&text.contains(" HTTP")) {
+                String verb = text.split(" ")[0];
+                String url = text.substring(text.indexOf(" ")).split(" HTTP")[0];
+                return Optional.of(new VulnTableResult(url,verb));
+            }
+        }
+        return Optional.empty();
+    }
+
+
+    private String getLastExercisedDate(Route route) {
+        Long lastExercised = route.getExercised();
+        if(lastExercised==null) {
+            return "";
+        } else {
+            String dateString =  new Date(lastExercised).toString();
+            dataModel.getFormattedDateMap().put(dateString,lastExercised);
+            return dateString;
         }
     }
 
@@ -166,10 +231,10 @@ public class ContrastTab implements ITab{
      * @throws IOException
      */
     private void updateTraceTable(String orgID, String appID, TSReader reader) throws IOException {
-        traces = reader.getTraces(orgID,appID);
-        DefaultTableModel tableModel = (DefaultTableModel) traceTable.getModel();
-        traces.forEach(trace -> tableModel.addRow(new Object[]{trace.getTitle(),trace.getRule(),trace.getSeverity()}));
-        traceTable.updateUI();
+        dataModel.getTraces().clear();
+        dataModel.getTraces().addAll(reader.getTraces(orgID,appID));
+        reader.getTraces(orgID,appID).forEach(trace -> dataModel.getTraceTableModel().addRow(new Object[]{trace.getTitle(),trace.getRule(),trace.getSeverity()}));
+        Components.getTraceTable().updateUI();
     }
 
 
@@ -178,72 +243,113 @@ public class ContrastTab implements ITab{
      * @param appConfig
      */
     private void addUpdateButton(JPanel appConfig) {
-        updateButton = new JButton("Update");
-        updateButton.setEnabled(false);
-        updateButton.addActionListener(e -> {
-            if (credsFile != null) {
+        Components.setUpdateButton(new JButton("Update"));
+        Components.getUpdateButton().setEnabled(false);
+        Components.getUpdateButton().addActionListener(e -> {
+            if (dataModel.getCredsFile() != null) {
                 try {
-                    clearRouteTable();
-                    routeCoverageMap.clear();
-                    vulnRequests.clear();
-                    Optional<TSCreds> creds = new YamlReader().parseContrastYaml(new File(credsFile.getAbsolutePath()));
-                    if (creds.isPresent()) {
-                        String orgID = orgsCombo.getSelectedItem().toString();
-                        String appID = appNameIDMap.get(appCombo.getSelectedItem().toString());
-                        TSReader reader = new TSReader(creds.get(), logger);
+                    dataModel.clearData();
+                    dataModel.clearTraceTable();
+                    dataModel.clearRouteTable();
+                    Optional<TSCreds> tsCreds = getCreds();
+                    if (tsCreds.isPresent()) {
+                        String orgID = Components.getOrgsCombo().getSelectedItem().toString();
+                        String appID = dataModel.getAppNameIDMap().get(Components.getAppCombo().getSelectedItem().toString());
+                        TSReader reader = new TSReader(dataModel.getCredentials().get(), logger,dataModel);
                         updateTraceTable(orgID, appID, reader);
                         updateRouteTable(orgID, appID, reader);
                     }
-                } catch (IOException | InterruptedException | ExecutionException ex) {
+                } catch (IOException | ContrastException | InterruptedException | ExecutionException ex) {
                     logger.logException("Error occurred while updating tables",ex);
                     throw new RuntimeException(ex);
                 }
-                importRoutesButton.setEnabled(true);
+                Components.getImportRoutesButton().setEnabled(true);
             }
         });
-        appConfig.add(updateButton);
+        appConfig.add(Components.getUpdateButton());
     }
 
 
     private void addHttpService(JPanel panel) {
-        protocolCombo = new JComboBox<>();
-        protocolCombo.addItem("http");
-        protocolCombo.addItem("https");
-        panel.add(protocolCombo);
-        hostNameField = new TextField();
-        hostNameField.setText("localhost");
-        portNumberField = new TextField();
-        portNumberField.setText("8080");
-        panel.add(hostNameField);
-        panel.add(portNumberField);
+        Components.setProtocolCombo(new JComboBox<>());
+        Components.getProtocolCombo().addItem("http");
+        Components.getProtocolCombo().addItem("https");
+        panel.add(Components.getProtocolCombo());
+        Components.setHostNameField(new TextField());
+        Components.getHostNameField().setText("localhost");
+        Components.setPortNumberField(new TextField());
+        Components.getPortNumberField().setText("8080");
+        Components.setAppContextField(new TextField("",20));
+        Components.setPathLabel(new JLabel());
+        Components.getPathLabel().setText(getPathString());
+        addPathUpdater();
+        panel.add(Components.getHostNameField());
+        panel.add(Components.getPortNumberField());
+        panel.add(Components.getAppContextField());
+        JPanel subPanel = new JPanel();
+        subPanel.setBorder(BorderFactory.createTitledBorder("URL"));
+        subPanel.add(Components.getPathLabel());
+        panel.add(subPanel);
+
     }
 
-    /**
-     * Clears the Route Table, called when a new application is selected in the application drop down.
-     */
-    private void clearRouteTable() {
-        if(routeTable!=null) {
-            DefaultTableModel tableModel = (DefaultTableModel) routeTable.getModel();
-            tableModel.setRowCount(0);
-        }
+    private void addPathUpdater() {
+        Components.getProtocolCombo().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
+        Components.getHostNameField().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
+        Components.getPortNumberField().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
+        Components.getAppContextField().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
     }
+
+    private String getPathString() {
+        StringBuilder msg = new StringBuilder();
+        msg.append(Components.getProtocolCombo().getSelectedItem())
+                .append("://")
+                .append(Components.getHostNameField().getText())
+                .append(":")
+                .append(Components.getPortNumberField().getText())
+                .append(Components.getAppContextField().getText());
+        return msg.toString();
+    }
+
+
 
     /**
      * Adds the Route Table to the UI
      * @param panel
      */
     private void addRouteTable(JPanel panel) {
-        routeTableModel = new DefaultTableModel();
-        String[] colNames = {"Path", "Verb", "From Vuln"};
-        routeTableModel.setColumnIdentifiers(colNames);
-        routeTable = new JTable();
-        routeTable.setModel(routeTableModel);
-        routeTable.getColumnModel().getColumn(0).setPreferredWidth(300);
-        routeTable.getColumnModel().getColumn(1).setMaxWidth(50);
-        routeTable.getColumnModel().getColumn(2).setMaxWidth(100);
-        JScrollPane scrollPane = new JScrollPane(routeTable);
-        routeTable.setFillsViewportHeight(true);
+        dataModel.setRouteTableModel(new NonEditableTableModel());
+        dataModel.getRouteTableModel().setColumnIdentifiers(ROUTE_TABLE_COL_NAMES);
+        Components.setRouteTable(new RouteTable());
+        Components.getRouteTable().setModel(dataModel.getRouteTableModel());
+        JCheckBox selectedCheckBox =  new JCheckBox("Selected");
+        selectedCheckBox.setSelected(true);
+        selectedCheckBox.addActionListener(e -> {
+            JCheckBox box = (JCheckBox) e.getSource();
+            Boolean isSelected = box.isSelected();
+            for( int i = 0; i<dataModel.getRouteTableModel().getRowCount() ;i++) {
+                dataModel.getRouteTableModel().setValueAt(isSelected,i,0);
+            }
+        });
+        Components.getRouteTable().getColumnModel().getColumn(0).setHeaderRenderer(new EditableHeaderRenderer(selectedCheckBox));
+        Components.getRouteTable().getColumnModel().getColumn(0).setMaxWidth(80);
+        Components.getRouteTable().getColumnModel().getColumn(0).setMinWidth(80);
+        Components.getRouteTable().getColumnModel().getColumn(0).setPreferredWidth(80);
+
+        Components.getRouteTable().getColumnModel().getColumn(1).setPreferredWidth(300);
+        Components.getRouteTable().getColumnModel().getColumn(2).setMaxWidth(50);
+        Components.getRouteTable().getColumnModel().getColumn(3).setMaxWidth(100);
+        Components.getRouteTable().getColumnModel().getColumn(4).setMaxWidth(250);
+        Components.getRouteTable().getColumnModel().getColumn(4).setPreferredWidth(250);
+
+        JScrollPane scrollPane = new JScrollPane(Components.getRouteTable());
+        Components.getRouteTable().setFillsViewportHeight(true);
+        TableRowSorter<TableModel> sorter
+                = new TableRowSorter<>(Components.getRouteTable().getModel());
+        sorter.setComparator(4, new RouteTableComparator(dataModel));
+        Components.getRouteTable().setRowSorter(sorter);
         panel.add(scrollPane,BorderLayout.CENTER);
+
     }
 
     /**
@@ -252,70 +358,39 @@ public class ContrastTab implements ITab{
      * @param panel
      */
     private void addImportRoutesToSiteMapButton(JPanel panel) {
-        importRoutesButton = new JButton("Import Routes To Site Map");
-        importRoutesButton.setEnabled(false);
-        panel.add(importRoutesButton);
-        importRoutesButton.addActionListener(e -> {
-            if(credsFile!= null) {
-                try {
-                    Optional<TSCreds> creds = new YamlReader().parseContrastYaml(new File(credsFile.getAbsolutePath()));
-                    if(creds.isPresent()) {
-                        String orgID = orgsCombo.getSelectedItem().toString();
-                        String appID = appNameIDMap.get(appCombo.getSelectedItem().toString());
-                        TSReader reader = new TSReader(creds.get(),logger);
-                        Optional<Routes> routes = reader.getRoutes(orgID,appID);
-                        RequestResponseGenerator generator = new RequestResponseGenerator();
-                        HttpService service = new HttpService(hostNameField.getText(),
-                                Integer.parseInt(portNumberField.getText()),
-                                protocolCombo.getSelectedItem().toString()
-                        );
-                        if(routes.isPresent()) {
-                            for(Route route : routeCoverageMap.keySet()) {
-                                Optional<RouteCoverage> routeCoverage = routeCoverageMap.get(route);
-                                if(routeCoverage.isPresent()) {
-                                    for(RouteCoverageObservationResource r : routeCoverage.get().getObservations()) {
-                                        callbacks.addToSiteMap(generator.getReqResForRouteCoverage(r,service));
-                                    }
-                                }
-                            }
-                        }
-                        for (HttpRequestResponse hreqRes : vulnRequests) {
-                            Optional<IHttpRequestResponse> requestResponse = generator.getReqResForTrace(hreqRes,service);
-                            requestResponse.ifPresent(callbacks::addToSiteMap);
-                        }
-                    }
-                } catch (IOException ex) {
-                    logger.logException("Error occurred importing site map",ex);
-                    throw new RuntimeException(ex);
-                }
-            }
+        Components.setImportRoutesButton(new JButton("Import Routes To Site Map"));
+        Components.getImportRoutesButton().setEnabled(false);
+        panel.add(Components.getImportRoutesButton());
+        Components.getImportRoutesButton().addActionListener(e -> {
+            new SiteMapImporter(dataModel,callbacks,logger,new TSReader(dataModel.getCredentials().get(),logger,dataModel)).importSiteMapToBurp(
+                    Components.getOrgsCombo().getSelectedItem().toString(),
+                    Components.getAppCombo().getSelectedItem().toString(),
+                    Components.getHostNameField().getText(),
+                    Integer.parseInt(Components.getPortNumberField().getText()),
+                    Components.getProtocolCombo().getSelectedItem().toString(),
+                    Components.getAppContextField().getText()
+                    );
         });
 
     }
 
-    /**
-     * Clears the Trace Table. This is called when a new Application is selected in the Application drop down.
-     */
-    private void clearTraceTable() {
-        if(traceTable!=null) {
-            DefaultTableModel tableModel = (DefaultTableModel) traceTable.getModel();
-            tableModel.setRowCount(0);
-        }
-    }
 
     /**
      * Adds the Trace Table to the UI
      * @param panel
      */
     private void addTraceTable(JPanel panel) {
-        String[] colNames = {"Name","Rule","Severity"};
-        DefaultTableModel model = new DefaultTableModel();
-        model.setColumnIdentifiers(colNames);
-        traceTable = new JTable();
-        traceTable.setModel(model);
-        JScrollPane scrollPane = new JScrollPane(traceTable);
-        traceTable.setFillsViewportHeight(true);
+        dataModel.setTraceTableModel(new NonEditableTableModel());
+        dataModel.getTraceTableModel().setColumnIdentifiers(TRACE_TABLE_COL_NAMES);
+        Components.setTraceTable( new JTable());
+        Components.getTraceTable().setModel(dataModel.getTraceTableModel());
+
+        JScrollPane scrollPane = new JScrollPane(Components.getTraceTable());
+        Components.getTraceTable().setFillsViewportHeight(true);
         panel.add(scrollPane,BorderLayout.CENTER);
+        TableRowSorter<TableModel> sorter
+                = new TableRowSorter<>(Components.getTraceTable().getModel());
+        Components.getTraceTable().setRowSorter(sorter);
     }
 
     /**
@@ -325,45 +400,93 @@ public class ContrastTab implements ITab{
      * @param gbc
      */
     private void addApplicationDropDown(JPanel panel,GridBagConstraints gbc) {
-        appButton = new JButton("Refresh Application Names");
-        appButton.setEnabled(false);
-        appCombo = new JComboBox<>();
-        appCombo.addActionListener(e -> {
-            clearTraceTable();
-            clearRouteTable();
+        Components.setAppButton( new JButton("Refresh Application Names"));
+        Components.getAppButton().setEnabled(false);
+        Components.setAppCombo(new JComboBox<>());
+        Components.getAppCombo().addActionListener(e -> {
+            dataModel.clearRouteTable();
+            dataModel.clearTraceTable();
         });
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.gridx = 0;
         gbc.gridy = 4;
-        panel.add(appButton,gbc);
+        panel.add(Components.getAppButton(),gbc);
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.gridx = 0;
         gbc.gridy = 5;
-        panel.add(appCombo,gbc);
-        appButton.addActionListener(e -> refreshApplications());
+        panel.add(Components.getAppCombo(),gbc);
+        Components.getAppButton().addActionListener(e -> refreshApplications());
+    }
+
+    private void addApplicationSortRadioButtons(JPanel appConfig, GridBagConstraints gbc) {
+        JPanel sortPanel = new JPanel();
+        sortPanel.setBorder(BorderFactory.createTitledBorder("Application Sort"));
+        Components.setSortByAppNameRadio(new JRadioButton("App Name"));
+        Components.getSortByAppNameRadio().setEnabled(false);
+        Components.setSortByLastSeenRadio(new JRadioButton("Last Seen"));
+        Components.getSortByLastSeenRadio().setEnabled(false);
+        ButtonGroup sortAppGroup = new ButtonGroup();
+        sortAppGroup.add(Components.getSortByAppNameRadio());
+        sortAppGroup.add(Components.getSortByLastSeenRadio());
+        Components.getSortByAppNameRadio().addActionListener(e -> {
+            if(dataModel.getSortType().equals(SortType.SORT_BY_LAST_SEEN)) {
+                sortAppComboByAppName();
+                dataModel.setSortType(SortType.SORT_BY_NAME);
+            }
+        });
+        Components.getSortByLastSeenRadio().addActionListener(e -> {
+            if(dataModel.getSortType().equals(SortType.SORT_BY_NAME)) {
+                sortAppComboByLastSeen();
+                dataModel.setSortType(SortType.SORT_BY_LAST_SEEN);
+
+            }
+        });
+        sortAppGroup.setSelected(Components.getSortByAppNameRadio().getModel(),true);
+        sortPanel.add(Components.getSortByAppNameRadio());
+        sortPanel.add(Components.getSortByLastSeenRadio());
+        appConfig.add(sortPanel);
+    }
+
+    private void sortAppComboByLastSeen() {
+        List<Application> applications = dataModel.getApplications();
+        applications.sort(new SortByLastSeenComparator());
+        Components.getAppCombo().removeAllItems();
+        applications.forEach(app-> Components.getAppCombo().addItem(app.getName()));
+    }
+
+    private void sortAppComboByAppName() {
+        List<Application> applications = dataModel.getApplications();
+        applications.sort(new SortByAppNameComparator());
+        Components.getAppCombo().removeAllItems();
+        applications.stream().forEach(app-> Components.getAppCombo().addItem(app.getName()));
+
     }
 
     /**
      * Logic that is called when the "Refresh Applications" Button is pressed.
      * This calls TS to get an updated list of applications for the specified Org.
      */
-    private static void refreshApplications() {
-        if (credsFile != null) {
+    private void refreshApplications() {
+        if (dataModel.getCredsFile() != null) {
             try {
-                Optional<TSCreds> creds = new YamlReader().parseContrastYaml(new File(credsFile.getAbsolutePath()));
-                appCombo.removeAllItems();
-                appNameIDMap.clear();
+                Optional<TSCreds> creds = getCreds();
+                Components.getAppCombo().removeAllItems();
+                dataModel.getAppNameIDMap().clear();
                 if (creds.isPresent()) {
-                    TSReader reader = new TSReader(creds.get(),logger);
-                    List<Application> applications = reader.getApplications(Objects.requireNonNull(orgsCombo.getSelectedItem()).toString());
-                    applications.forEach(application -> appNameIDMap.put(application.getName(), application.getId()));
-                    applications.stream().map(Application::getName).forEach(nme -> appCombo.addItem(nme));
+                    TSReader reader = new TSReader(creds.get(),logger,dataModel);
+                    List<Application> applications = reader.getApplications(Objects.requireNonNull(Components.getOrgsCombo().getSelectedItem()).toString());
+                    applications.forEach(application -> dataModel.getAppNameIDMap().put(application.getName(), application.getId()));
+                    if(dataModel.getSortType().equals(SortType.SORT_BY_NAME)) {
+                        applications.sort(new SortByAppNameComparator());
+                    } else {
+                        applications.sort(new SortByLastSeenComparator());
+                    }
+                    applications.forEach(application -> Components.getAppCombo().addItem(application.getName()));
                 }
-            } catch (IOException ex) {
+            } catch (IOException|ContrastException ex) {
                 logger.logException("Error occurred while refreshing application list",ex);
                 throw new RuntimeException(ex);
             }
-
         }
     }
 
@@ -373,35 +496,35 @@ public class ContrastTab implements ITab{
      * @param gbc
      */
     private void addOrgsDropDown(JPanel panel,GridBagConstraints gbc) {
-        orgIdButton = new JButton("Refresh Org IDS");
-        orgIdButton.setEnabled(false);
-        orgsCombo = new JComboBox<>();
+        Components.setOrgIdButton(new JButton("Refresh Org IDS"));
+        Components.getOrgIdButton().setEnabled(false);
+        Components.setOrgsCombo(new JComboBox<>());
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.gridx = 0;
         gbc.gridy = 2;
-        panel.add(orgIdButton,gbc);
+        panel.add(Components.getOrgIdButton(),gbc);
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.gridx = 0;
         gbc.gridy = 3;
-        panel.add(orgsCombo,gbc);
-        orgIdButton.addActionListener(e -> refreshOrgIDS());
+        panel.add(Components.getOrgsCombo(),gbc);
+        Components.getOrgIdButton().addActionListener(e -> refreshOrgIDS());
     }
 
     /**
      * Logic that is called when the "Refresh Org IDS" Button is pressed.
      * This calls TS to get an updated list of organizations.
      */
-    private static void refreshOrgIDS() {
-        if(credsFile!= null) {
+    private void refreshOrgIDS() {
+        if(dataModel.getCredsFile()!= null) {
             try {
-                Optional<TSCreds> creds = new YamlReader().parseContrastYaml(new File(credsFile.getAbsolutePath()));
-                orgsCombo.removeAllItems();
+                Optional<TSCreds> creds = getCreds();
+                Components.getOrgsCombo().removeAllItems();
                 if(creds.isPresent()) {
-                    TSReader reader = new TSReader(creds.get(),logger);
+                    TSReader reader = new TSReader(creds.get(),logger,dataModel);
                     List<String> orgIds = reader.getOrgs().stream().map(Organization::getOrgUuid).collect(Collectors.toList());
-                    orgIds.forEach(item->orgsCombo.addItem(item));
+                    orgIds.forEach(item->Components.getOrgsCombo().addItem(item));
                 }
-            } catch (IOException ex) {
+            } catch (IOException|ContrastException ex) {
                 logger.logException("Error occurred while refreshing org list",ex);
                 throw new RuntimeException(ex);
             }
@@ -416,7 +539,7 @@ public class ContrastTab implements ITab{
      * Also the Org and App Drop downs are populated by calling TeamServer with the newly selected credentials.
      * @param panel
      */
-    private static void createFileChooser(final JPanel panel){
+    private void createFileChooser(final JPanel panel){
         JButton button = new JButton("Select Creds File");
         final JLabel label = new JLabel();
         label.setText("Select Config File");
@@ -426,13 +549,13 @@ public class ContrastTab implements ITab{
             int option = fileChooser.showOpenDialog(panel);
             if(option == JFileChooser.APPROVE_OPTION){
                 File file = fileChooser.getSelectedFile();
-                credsFile = file;
-                if(credsFile!=null) {
-                    logger.logMessage("Creds File Selected : " + credsFile);
+                dataModel.setCredsFile(file);
+                if(dataModel.getCredsFile()!=null) {
+                    logger.logMessage("Creds File Selected : " + dataModel.getCredsFile());
                 } else {
                     logger.logMessage("Creds File is null");
                 }
-                label.setText("Selected: " + credsFile.getName());
+                label.setText("Selected: " + dataModel.getCredsFile().getName());
                 enableButtons();
                 refreshOrgIDS();
                 refreshApplications();
@@ -444,12 +567,51 @@ public class ContrastTab implements ITab{
         panel.add(label);
     }
 
+    private Optional<TSCreds> getCreds() throws IOException {
+        if(!dataModel.getCredentials().isPresent()) {
+            dataModel.setCredentials(new YamlReader().parseContrastYaml(new File(dataModel.getCredsFile().getAbsolutePath())));
+            return dataModel.getCredentials();
+        } else {
+            return dataModel.getCredentials();
+        }
+    }
+
     /**
      * Enables the org, app and update buttons.
      */
-    private static void enableButtons() {
-        orgIdButton.setEnabled(true);
-        appButton.setEnabled(true);
-        updateButton.setEnabled(true);
+    private void enableButtons() {
+        Components.getOrgIdButton().setEnabled(true);
+        Components.getAppButton().setEnabled(true);
+        Components.getUpdateButton().setEnabled(true);
+        Components.getSortByAppNameRadio().setEnabled(true);
+        Components.getSortByLastSeenRadio().setEnabled(true);
     }
+
+
+    private StoryResponse getStoryResponse(String orgID, String traceID,TSReader reader) throws IOException {
+        if(!dataModel.getTraceIDStoryMap().containsKey(traceID)) {
+            StoryResponse response = reader.getStory(orgID,traceID);
+            dataModel.getTraceIDStoryMap().put(traceID,response);
+        }
+        return dataModel.getTraceIDStoryMap().get(traceID);
+    }
+
+    private List<PathTracePair> getPathsFromNonRequestVulns(String orgID,TSReader reader) throws IOException {
+        List<PathTracePair> paths = new ArrayList<>();
+        for (Trace trace : dataModel.getTraces()) {
+            StoryResponse response = getStoryResponse(orgID, trace.getUuid(), reader);
+            Story story = response.getStory();
+            if (story.getChapters() != null) {
+                Optional<Chapter> chapter = story.getChapters().stream().filter(chp -> "properties".equals(chp.getType())).findFirst();
+                if (chapter.isPresent() && chapter.get().getPropertyResources() != null && !chapter.get().getPropertyResources().isEmpty()) {
+                    paths.add(new PathTracePair(chapter.get().getPropertyResources().get(0).getName(), trace));
+                }
+            }
+        }
+        return paths;
+    }
+
 }
+
+
+

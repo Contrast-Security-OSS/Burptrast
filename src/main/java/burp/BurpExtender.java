@@ -9,7 +9,4 @@ public class BurpExtender implements IBurpExtender
         callbacks.addSuiteTab(new ContrastTab(callbacks));
     }
 
-
-
-
 }

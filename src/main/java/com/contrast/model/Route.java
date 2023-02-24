@@ -8,15 +8,18 @@ public class Route {
     private int vulnerabilities;
     private String route_hash;
 
+    private Long exercised;
+
     public Route() {
     }
 
-    public Route(String signature, int vulnerabilities, String route_hash) {
+
+    public Route(String signature, int vulnerabilities, String route_hash, Long exercised) {
         this.signature = signature;
         this.vulnerabilities = vulnerabilities;
         this.route_hash = route_hash;
+        this.exercised = exercised;
     }
-
 
     public String getSignature() {
         return signature;
@@ -40,6 +43,14 @@ public class Route {
 
     public void setRoute_hash(String route_hash) {
         this.route_hash = route_hash;
+    }
+
+    public Long getExercised() {
+        return exercised;
+    }
+
+    public void setExercised(Long exercised) {
+        this.exercised = exercised;
     }
 
     @Override
