@@ -16,7 +16,7 @@ public class RouteTableComparator implements Comparator<Object> {
         long twoLong = getTimeStampFromDate(o2);
         if(oneLong>twoLong) {
             return 1;
-        } else if(twoLong<oneLong) {
+        } else if(oneLong<twoLong) {
             return -1;
         } else {
             return 0;
