@@ -525,6 +525,8 @@ public class ContrastTab implements ITab{
                     orgIds.forEach(item->Components.getOrgsCombo().addItem(item));
                 }
             } catch (IOException|ContrastException ex) {
+                JOptionPane.showMessageDialog(null, ex+
+                        "\nSee Error log under extensions -> Errors for further details.");
                 logger.logException("Error occurred while refreshing org list",ex);
                 throw new RuntimeException(ex);
             }
