@@ -25,6 +25,15 @@ public class Components {
 
     private static JLabel pathLabel;
 
+    private static JRadioButton enableLiveBrowse;
+
+    private static JRadioButton disableLiveBrowse;
+
+    private static JButton credsFile;
+
+
+    private static JLabel statusLabel;
+
     public static TextField getPortNumberField() {
         return portNumberField;
     }
@@ -144,4 +153,53 @@ public class Components {
     public static void setPathLabel(JLabel pathLabel) {
         Components.pathLabel = pathLabel;
     }
+
+    public static JRadioButton getEnableLiveBrowse() {
+        return enableLiveBrowse;
+    }
+
+    public static void setEnableLiveBrowse(JRadioButton enableLiveBrowse) {
+        Components.enableLiveBrowse = enableLiveBrowse;
+    }
+
+    public static JRadioButton getDisableLiveBrowse() {
+        return disableLiveBrowse;
+    }
+
+    public static void setDisableLiveBrowse(JRadioButton disableLiveBrowse) {
+        Components.disableLiveBrowse = disableLiveBrowse;
+    }
+
+    public static JButton getCredsFile() {
+        return credsFile;
+    }
+
+    public static void setCredsFile(JButton credsFile) {
+        Components.credsFile = credsFile;
+    }
+
+    public static JLabel getStatusLabel() {
+        return statusLabel;
+    }
+
+    public static void setStatusLabel(JLabel statusLabel) {
+        Components.statusLabel = statusLabel;
+    }
+
+
+    public static void setButtons(boolean enabled) {
+        Components.getOrgIdButton().setEnabled(enabled);
+        Components.getAppButton().setEnabled(enabled);
+        Components.getUpdateButton().setEnabled(enabled);
+        Components.getSortByAppNameRadio().setEnabled(enabled);
+        Components.getSortByLastSeenRadio().setEnabled(enabled);
+        Components.getDisableLiveBrowse().setEnabled(enabled);
+        Components.getEnableLiveBrowse().setEnabled(enabled);
+        Components.getImportRoutesButton().setEnabled(enabled);
+        Components.getCredsFile().setEnabled(enabled);
+        Components.getOrgsCombo().setEnabled(enabled);
+        Components.getAppCombo().setEnabled(enabled);
+    }
+
+
 }

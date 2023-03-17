@@ -1,12 +1,12 @@
 package burp;
 
+import com.contrast.threads.BrowseVulnCheckThread;
 import com.contrast.SortType;
 import com.contrast.TSCreds;
 import com.contrast.model.Route;
 import com.contrast.model.RouteCoverage;
 import com.contrast.model.TraceIDDecoractedHttpRequestResponse;
 import com.contrastsecurity.models.Application;
-import com.contrastsecurity.models.Story;
 import com.contrastsecurity.models.StoryResponse;
 import com.contrastsecurity.models.Trace;
 
@@ -49,6 +49,16 @@ public class DataModel {
 
 
     private List<Application> applications = new ArrayList<>();
+
+    private boolean isLiveBrowseEnabled = false;
+
+    private BrowseVulnCheckThread browseCheckThread;
+
+    private CorrelationIDAppender correlationIDAppender;
+
+    private ThreadManager threadManager;
+
+    private Status status;
 
     public DataModel() {}
 
@@ -162,5 +172,45 @@ public class DataModel {
 
     public Map<String, Set<Trace>> getNonRequestPathVulnMap() {
         return nonRequestPathVulnMap;
+    }
+
+    public boolean isLiveBrowseEnabled() {
+        return isLiveBrowseEnabled;
+    }
+
+    public void setLiveBrowseEnabled(boolean liveBrowseEnabled) {
+        isLiveBrowseEnabled = liveBrowseEnabled;
+    }
+
+    public BrowseVulnCheckThread getBrowseCheckThread() {
+        return browseCheckThread;
+    }
+
+    public void setBrowseCheckThread(BrowseVulnCheckThread browseCheckThread) {
+        this.browseCheckThread = browseCheckThread;
+    }
+
+    public CorrelationIDAppender getCorrelationIDAppender() {
+        return correlationIDAppender;
+    }
+
+    public void setCorrelationIDAppender(CorrelationIDAppender correlationIDAppender) {
+        this.correlationIDAppender = correlationIDAppender;
+    }
+
+    public ThreadManager getThreadManager() {
+        return threadManager;
+    }
+
+    public void setThreadManager(ThreadManager threadManager) {
+        this.threadManager = threadManager;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public void setStatus(Status status) {
+        this.status = status;
     }
 }

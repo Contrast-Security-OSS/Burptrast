@@ -1,35 +1,47 @@
 package com.contrast;
 
 import burp.DataModel;
+import burp.IBurpExtenderCallbacks;
+import burp.IHttpRequestResponse;
+import burp.IHttpService;
+import burp.IResponseInfo;
 import com.contrast.model.RouteCoverage;
 import com.contrast.model.Routes;
 import com.contrast.model.TraceIDDecoractedHttpRequestResponse;
 import com.contrastsecurity.exceptions.ContrastException;
-import com.contrastsecurity.http.ServerFilterForm;
-import com.contrastsecurity.http.TraceFilterForm;
+import com.contrastsecurity.http.HttpMethod;
+import com.contrastsecurity.http.RequestConstants;
+import com.contrastsecurity.http.UrlBuilder;
 import com.contrastsecurity.models.Application;
+import com.contrastsecurity.models.Applications;
+import com.contrastsecurity.models.Chapter;
 import com.contrastsecurity.models.HttpRequestResponse;
 import com.contrastsecurity.models.Organization;
-import com.contrastsecurity.models.Server;
-import com.contrastsecurity.models.Servers;
+import com.contrastsecurity.models.Organizations;
+import com.contrastsecurity.models.PropertyResource;
 import com.contrastsecurity.models.StoryResponse;
 import com.contrastsecurity.models.Trace;
 import com.contrastsecurity.models.TraceFilterBody;
 import com.contrastsecurity.models.Traces;
-import com.contrastsecurity.sdk.ContrastSDK;
 import com.contrastsecurity.sdk.internal.GsonFactory;
+import com.contrastsecurity.utils.ContrastSDKUtils;
 import com.google.gson.Gson;
-import org.apache.commons.io.IOUtils;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.nio.charset.StandardCharsets;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -43,21 +55,21 @@ public class TSReader {
 
     private final TSCreds creds;
     private final Logger logger;
-    private final ContrastSDK contrastSDK;
     private final DataModel dataModel;
+    private final IBurpExtenderCallbacks callbacks;
 
     private ExecutorService executor = Executors.newFixedThreadPool(6);
 
     private Gson gson = GsonFactory.create();
 
+    private UrlBuilder urlBuilder;
 
-    public TSReader(TSCreds creds, Logger logger, DataModel dataModel) {
+    public TSReader(TSCreds creds, Logger logger, DataModel dataModel, IBurpExtenderCallbacks callbacks) {
         this.creds = creds;
         this.logger = logger;
         this.dataModel = dataModel;
-        contrastSDK = new ContrastSDK.Builder(creds.getUserName(), creds.getServiceKey(), creds.getApiKey())
-                .withApiUrl(creds.getUrl()+"/api")
-                .build();
+        this.callbacks = callbacks;
+        this.urlBuilder = UrlBuilder.getInstance();
     }
 
     /**
@@ -67,32 +79,12 @@ public class TSReader {
      */
     public List<Organization> getOrgs() throws IOException, ContrastException {
         logger.logMessage("get orgs");
-        List<Organization> orgs =  getSDK().getProfileOrganizations().getOrganizations();
+        byte[] data = getHTTPRequest(HttpMethod.GET, getPath()+urlBuilder.getProfileOrganizationsUrl(),getHost(),getPort(),"");
+        List<Organization> orgs =  gson.fromJson(new String(data), Organizations.class).getOrganizations();
         logger.logMessage("found" + orgs.size() +" orgs");
         return orgs;
     }
 
-    /**
-     * Returns a list of Servers connected to the specified Org.
-     * @param orgID
-     * @return
-     * @throws IOException
-     */
-    public List<Server> getServers(String orgID) throws IOException,ContrastException {
-        return getSDK().getServers(orgID, new ServerFilterForm()).getServers();
-    }
-
-    /**
-     * Returns an Optional Server for the specified Org and App Name.
-     * @param orgID
-     * @param appName
-     * @return
-     * @throws IOException
-     */
-    public Optional<Server> getServerForName(String orgID, String appName) throws IOException,ContrastException {
-        List<Server> servers = getServers(orgID);
-        return servers.stream().filter(server -> appName.equals(server.getName())).findFirst();
-    }
 
     /**
      * Returns a list of Traces ( Vulnerabilities ) for the specified App.
@@ -103,12 +95,13 @@ public class TSReader {
      */
     public List<Trace> getTraces(String orgID, String appId) throws IOException, ContrastException {
         logger.logMessage("get traces for orgid : " + orgID + " appid " + appId);
-
         TraceFilterBody body = new TraceFilterBody();
-        List<Trace> traces =  getSDK().getTraces(orgID,appId,body).getTraces();
+        byte[] data = getHTTPRequest(HttpMethod.POST, getPath()+urlBuilder.getTracesWithBodyUrl(orgID, appId),getHost(),getPort(),gson.toJson(body));
+        List<Trace> traces =  gson.fromJson(new String(data),Traces.class).getTraces();
         logger.logMessage("found " + traces.size() + " traces");
         return traces;
     }
+
 
     /**
      * Returns a list of Routes ( Endpoints ) for the specified App.
@@ -119,26 +112,15 @@ public class TSReader {
      */
     public Optional<Routes> getRoutes(String orgID, String appID) throws IOException,ContrastException {
         logger.logMessage("get routes for orgid : " + orgID + " appid " + appID);
-
-        String url = creds.getUrl()+"/api/ng/%s/applications/%s/route";
+        String url = "/ng/%s/applications/%s/route";
         url = String.format(url, orgID,appID);
-
-        HttpURLConnection connection = getSDK().makeConnection(url,"GET");
-        Optional<Routes> result = Optional.empty();
-        try {
-            connection.connect();
-            if (connection.getResponseCode() == 200) {
-                try (InputStream is = connection.getInputStream()) {
-                    String body = IOUtils.toString(is, StandardCharsets.UTF_8);
-
-                    result =  Optional.of(gson.fromJson(body, Routes.class));
-                }
-            }
-        } finally {
-            connection.disconnect();
+        byte[] data = getHTTPRequest(HttpMethod.GET, getPath()+url,getHost(),getPort(),"");
+        if(data.length==0) {
+            return Optional.empty();
         }
-        result.ifPresent(rtes-> logger.logMessage("found "+rtes.getRoutes().size() + " routes"));
-        return result;
+        Routes routes = gson.fromJson(new String(data), Routes.class);
+        logger.logMessage("found "+routes.getRoutes().size() + " routes");
+        return Optional.of(routes);
     }
 
     /**
@@ -151,33 +133,23 @@ public class TSReader {
      */
     public Future<Optional<RouteCoverage>> getCoverageForTrace(String orgID, String appID, String routeID)  {
         logger.logMessage("get route observations for  for orgid : " + orgID + " appid " + appID + " routeid " + routeID);
-        String url = creds.getUrl()+"/api/ng/%s/applications/%s/route/%s/observations";
+        String url = "/ng/%s/applications/%s/route/%s/observations";
         url = String.format(url, orgID,appID,routeID);
         String finalUrl = url;
         return executor.submit(() -> {
-            HttpURLConnection connection = null;
             Optional<RouteCoverage> result = Optional.empty();
             try {
-                connection = getSDK().makeConnection(finalUrl,"GET");
-                connection.connect();
-                if (connection.getResponseCode() == 200) {
-                    try (InputStream is = connection.getInputStream()) {
-                        String body = IOUtils.toString(is, StandardCharsets.UTF_8);
-                        result =  Optional.of(gson.fromJson(body,RouteCoverage.class));
-                    }
+                byte[] data = getHTTPRequest(HttpMethod.GET, getPath()+finalUrl,getHost(),getPort(),"");
+                if(data.length>0) {
+                    result = Optional.of(gson.fromJson(new String(data), RouteCoverage.class));
                 }
             } catch (IOException |ContrastException e) {
                 logger.logException("unable to get coverage for trace",e);
                 throw new RuntimeException(e);
-            } finally {
-                if(connection!=null) {
-                    connection.disconnect();
-                }
             }
             result.ifPresent(rteCoverage-> logger.logMessage("found "+rteCoverage.getObservations().size() + " route observations"));
             return result;
         });
-
     }
 
 
@@ -190,7 +162,8 @@ public class TSReader {
     public Future<TraceIDDecoractedHttpRequestResponse> getHttpRequest(String orgID, String traceID) {
         return executor.submit(() -> {
             try {
-                return new TraceIDDecoractedHttpRequestResponse(traceID,getSDK().getHttpRequest(orgID,traceID));
+                byte[] data = getHTTPRequest(HttpMethod.GET, getPath()+ urlBuilder.getHttpRequestByTraceId(orgID, traceID),getHost(),getPort(),"");
+                return new TraceIDDecoractedHttpRequestResponse(traceID,gson.fromJson(new String(data), HttpRequestResponse.class));
             } catch (IOException |ContrastException e) {
                 logger.logException("unable to get HTTP Request for trace " ,e);
                 throw new RuntimeException(e);
@@ -207,8 +180,8 @@ public class TSReader {
      */
     public List<Application> getApplications(String orgID) throws IOException {
         logger.logMessage("get applications for orgid : " + orgID );
-
-        List<Application> applications =  getSDK().getApplications(orgID).getApplications();
+        byte[] data = getHTTPRequest(HttpMethod.GET, getPath()+urlBuilder.getApplicationsUrl(orgID),getHost(),getPort(),"");
+        List<Application> applications =  gson.fromJson(new String(data), Applications.class).getApplications();
         List<Application> sortedApps = new ArrayList<>(applications);
         sortedApps.sort(Comparator.comparingLong(Application::getLastSeen).reversed());
         logger.logMessage("found "+sortedApps.size() + " applications" );
@@ -216,38 +189,116 @@ public class TSReader {
         return sortedApps;
     }
 
-    public StoryResponse getStory(String orgID, String traceID) throws IOException {
-        return getSDK().getStory(orgID,traceID);
-    }
-
-    public Optional<Long> getServerIDFromAppID(String appID, String orgId, TSReader reader) {
-        logger.logMessage("get server for orgid : " + orgId +" and appid : " + appID);
-
-        if (dataModel.getAppToServerMap().containsKey(appID)) {
-            logger.logMessage("got server id from cache");
-            return Optional.of(dataModel.getAppToServerMap().get(appID));
-        } else {
-            ServerFilterForm filterForm = new ServerFilterForm();
-            filterForm.setApplicationIds(Arrays.asList(appID));
-            try {
-                Servers servers = reader.getSDK().getServersWithFilter(orgId, filterForm);
-                if(servers!=null && servers.getServers()!=null && !servers.getServers().isEmpty()) {
-                    dataModel.getAppToServerMap().put(appID,servers.getServers().get(0).getServerId());
-                    return Optional.of(dataModel.getAppToServerMap().get(appID));
+    public Optional<StoryResponse> getStory(String orgID, String traceID) throws IOException {
+        byte[] data = getHTTPRequest(HttpMethod.GET, getPath()+urlBuilder.getStoryByTraceId(orgID, traceID),getHost(),getPort(),"");
+        if(data.length>0) {
+            String inputString = new String(data);
+            StoryResponse story = gson.fromJson(inputString, StoryResponse.class);
+            JsonObject object = (JsonObject) new JsonParser().parse(inputString);
+            JsonObject storyObject = (JsonObject) object.get("story");
+            if (storyObject != null) {
+                JsonArray chaptersArray = (JsonArray) storyObject.get("chapters");
+                List<Chapter> chapters = story.getStory().getChapters();
+                if (chapters == null) {
+                    chapters = new ArrayList<>();
+                } else {
+                    chapters.clear();
                 }
-            } catch (IOException e) {
-                logger.logException("unable to get server id",e);
+                for (int i = 0; i < chaptersArray.size(); i++) {
+                    JsonObject member = (JsonObject) chaptersArray.get(i);
+                    Chapter chapter = gson.fromJson(member, Chapter.class);
+                    chapters.add(chapter);
+                    JsonObject properties = (JsonObject) member.get("properties");
+                    if (properties != null) {
+                        Set<Map.Entry<String, JsonElement>> entries = properties.entrySet();
+                        Iterator<Map.Entry<String, JsonElement>> iter = entries.iterator();
+                        List<PropertyResource> propertyResources = new ArrayList<>();
+                        chapter.setPropertyResources(propertyResources);
+                        while (iter.hasNext()) {
+                            Map.Entry<String, JsonElement> prop = iter.next();
+                            JsonElement entryValue = prop.getValue();
+                            if (entryValue != null && entryValue.isJsonObject()) {
+                                JsonObject obj = (JsonObject) entryValue;
+                                JsonElement name = obj.get("name");
+                                JsonElement value = obj.get("value");
+                                if (name != null && value != null) {
+                                    PropertyResource propertyResource = new PropertyResource();
+                                    propertyResource.setName(name.getAsString());
+                                    propertyResource.setValue(value.getAsString());
+                                    propertyResources.add(propertyResource);
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            return Optional.of(story);
+        } else {
             return Optional.empty();
         }
+
     }
 
 
 
-    public ContrastSDK getSDK() {
-        return contrastSDK;
+
+    private String getPath() throws MalformedURLException {
+        String path =  new URL(creds.getUrl()).getPath();
+        if(path.endsWith("/")) {
+            path = path.substring(0,path.length()-1);
+        }
+        if(path.endsWith("/api")) {
+            return path;
+        } else {
+            return path+"/api";
+        }
+
     }
 
+    private String getHost() throws MalformedURLException {
+        return new URL(creds.getUrl()).getHost();
+    }
+
+    private int getPort() throws MalformedURLException {
+        URL url =  new URL(creds.getUrl());
+        int port = url.getPort();
+        if(port==-1) {
+            port =  url.getDefaultPort();
+        }
+        return port;
+    }
+
+    private byte[] getHTTPRequest(HttpMethod method, String path, String host, int port, String body) {
+        IHttpService service = callbacks.getHelpers().buildHttpService(host,port,true);
+        List<String> headers = new ArrayList<>();
+        headers.add(method.name()+" "+ path+ " HTTP/2" );
+        headers.add(RequestConstants.AUTHORIZATION+": "+  ContrastSDKUtils.makeAuthorizationToken(creds.getUserName(), creds.getServiceKey()));
+        headers.add(RequestConstants.API_KEY+":"+creds.getApiKey());
+        headers.add("Content-Type: application/json; charset=UTF-8");
+        headers.add("User-Agent: Burptrast");
+        headers.add("Host: "+host);
+        byte[] message = callbacks.getHelpers().buildHttpMessage(headers,body.getBytes());
+        IHttpRequestResponse requestResponse =  callbacks.makeHttpRequest(service,message,false);
+        IResponseInfo info = callbacks.getHelpers().analyzeResponse(requestResponse.getResponse());
+        if(info.getStatusCode()==200) {
+            int bodyOffset = info.getBodyOffset();
+            if (bodyOffset > 0) {
+                return Arrays.copyOfRange(requestResponse.getResponse(), bodyOffset, requestResponse.getResponse().length);
+            } else {
+                return new byte[]{};
+            }
+        } else if(info.getStatusCode()==302||info.getStatusCode()==401) {
+          throw new ContrastException("Unable to make request to TS API. HTTP Status Code: " + info.getStatusCode());
+        } else {
+            logger.logError("error retrieving data " +info.getStatusCode());
+            int bodyOffset = info.getBodyOffset();
+            if (bodyOffset > 0) {
+                String bodyMessage =  new String(Arrays.copyOfRange(requestResponse.getResponse(), bodyOffset, requestResponse.getResponse().length));
+                logger.logError(bodyMessage);
+            }
+            return new byte[]{};
+        }
+    }
 
 
 
