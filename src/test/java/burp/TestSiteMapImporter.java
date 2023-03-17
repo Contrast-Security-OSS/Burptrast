@@ -54,7 +54,7 @@ public class TestSiteMapImporter {
         siteMapImporter.importSiteMapToBurp(orgID,appName,hostName,port,protocol,appcontext);
         assertEquals(1,callBack.getScanIssues().size());
         assertEquals(1,callBack.getRequestResponses().size());
-        assertEquals("sql injection", callBack.getScanIssues().get(0).getIssueName());
+        assertEquals("sql injection : Found by Assess", callBack.getScanIssues().get(0).getIssueName());
         assertEquals(IssueTypeMapper.SQL_INJECTION.getBurpType().intValue(), callBack.getScanIssues().get(0).getIssueType());
         assertEquals("risk text", callBack.getScanIssues().get(0).getIssueBackground());
         assertEquals("<a href=\"http://example.com/static/ng/index.html#/randomorgid/applications/randomappid/vulns/path1\">" +
@@ -235,7 +235,7 @@ public class TestSiteMapImporter {
     }
 
     private TSReader getTestTSReader(final Optional<Routes> routes) {
-        return new TSReader(getTestCreds(),null,null) {
+        return new TSReader(getTestCreds(),null,null,null) {
             @Override
             public Optional<Routes> getRoutes(String orgID, String appID) {
                 return routes;

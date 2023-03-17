@@ -51,7 +51,7 @@ public class ScanIssue implements IScanIssue
     @Override
     public String getIssueName() {
         if(trace.isPresent()) {
-            return trace.get().getTitle();
+            return trace.get().getTitle()+" : Found by Assess";
         } else {
             return "Unknown";
         }

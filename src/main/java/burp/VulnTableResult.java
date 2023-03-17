@@ -1,6 +1,6 @@
 package burp;
 
-class VulnTableResult {
+public class VulnTableResult {
 
     private String url;
     private String verb;

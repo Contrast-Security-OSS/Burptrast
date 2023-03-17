@@ -81,6 +81,7 @@ public class SiteMapImporter {
             for (String path : dataModel.getNonRequestPathVulnMap().keySet()) {
                 if (!matchedPaths.contains(path)) {
                     IHttpRequestResponse reqRes = generator.getReqResForRouteCoverage(path, "", service, "");
+                    reqRes.setComment("Found via Assess Vulnerability");
                     if(isNonRequestVulnSelected(path) ) {
                         for (Trace trace : dataModel.getNonRequestPathVulnMap().get(path)) {
                             ScanIssue scanIssue = new ScanIssue(reqRes, Optional.of(trace),
@@ -114,8 +115,9 @@ public class SiteMapImporter {
 
     private StoryResponse getStoryResponse(String orgID, String traceID, TSReader reader) throws IOException {
         if (!dataModel.getTraceIDStoryMap().containsKey(traceID)) {
-            StoryResponse response = reader.getStory(orgID, traceID);
-            dataModel.getTraceIDStoryMap().put(traceID, response);
+            reader.getStory(orgID, traceID)
+                    .ifPresent(storyResponse -> dataModel.getTraceIDStoryMap().put(traceID, storyResponse)
+                    );
         }
         return dataModel.getTraceIDStoryMap().get(traceID);
     }

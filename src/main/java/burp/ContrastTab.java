@@ -1,25 +1,20 @@
 package burp;
 
+import com.contrast.threads.BrowseVulnCheckThread;
+import com.contrast.threads.ImportRoutesToSiteMapThread;
 import com.contrast.Logger;
+import com.contrast.threads.RefreshAppIDsThread;
+import com.contrast.threads.RefreshOrgIDsThread;
 import com.contrast.SortByAppNameComparator;
 import com.contrast.SortByLastSeenComparator;
 import com.contrast.SortType;
 import com.contrast.TSCreds;
 import com.contrast.TSReader;
+import com.contrast.threads.UpdateRouteTableThread;
+import com.contrast.threads.UpdateTraceTableThread;
 import com.contrast.YamlReader;
-import com.contrast.model.Route;
-import com.contrast.model.RouteCoverage;
-import com.contrast.model.RouteCoverageObservationResource;
-import com.contrast.model.Routes;
-import com.contrast.model.TraceIDDecoractedHttpRequestResponse;
 import com.contrastsecurity.exceptions.ContrastException;
 import com.contrastsecurity.models.Application;
-import com.contrastsecurity.models.Chapter;
-import com.contrastsecurity.models.HttpRequestResponse;
-import com.contrastsecurity.models.Organization;
-import com.contrastsecurity.models.Story;
-import com.contrastsecurity.models.StoryResponse;
-import com.contrastsecurity.models.Trace;
 
 import javax.swing.*;
 import javax.swing.table.TableModel;
@@ -28,30 +23,23 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.stream.Collectors;
 
 public class ContrastTab implements ITab{
 
 
 
-
     public ContrastTab(IBurpExtenderCallbacks callbacks) {
         this.callbacks = callbacks;
+        dataModel.setCorrelationIDAppender(new CorrelationIDAppender(callbacks));
+        this.callbacks.registerHttpListener(dataModel.getCorrelationIDAppender());
         logger = new Logger( new PrintWriter(callbacks.getStdout(), true),
                 new PrintWriter(callbacks.getStderr(), true)
         );
+        dataModel.setThreadManager(new ThreadManager());
+        this.callbacks.registerExtensionStateListener(dataModel.getThreadManager());
     }
 
     public static String[] ROUTE_TABLE_COL_NAMES = {"Selected","Path", "Verb", "From Vuln","Last Exercised"};
@@ -79,6 +67,7 @@ public class ContrastTab implements ITab{
         GridBagConstraints gbc = new GridBagConstraints();
         JPanel firstLine = new JPanel(new GridBagLayout());
 
+        addStatusField(firstLine);
         // BurpTrast Credentials Panel
         JPanel configPanel = new JPanel();
         configPanel.setBorder( BorderFactory.createTitledBorder("Credentials"));
@@ -95,6 +84,12 @@ public class ContrastTab implements ITab{
         firstLine.add(appConfig);
         addUpdateButton(appConfig);
         panel.add(firstLine,BorderLayout.BEFORE_FIRST_LINE);
+
+        // add live browse panel
+        JPanel browseConfig = new JPanel();
+        browseConfig.setBorder(BorderFactory.createTitledBorder("Live Browse"));
+        addBrowseToggle(browseConfig);
+        firstLine.add(browseConfig);
 
         // Trace Panel, contains the Trace Table listing the found Vulnerabilities in TeamServer
         JPanel tracePanel = new JPanel(new BorderLayout());
@@ -116,6 +111,60 @@ public class ContrastTab implements ITab{
         return panel;
     }
 
+    /**
+     * Adds Status field to the UI, this is used to communicate the current status of Burptrast
+     * @param firstLine
+     */
+    private void addStatusField(JPanel firstLine) {
+        // Status Field
+        JPanel statusPanel = new JPanel();
+        statusPanel.setBorder(BorderFactory.createTitledBorder("Status"));
+        Components.setStatusLabel(new JLabel());
+        Components.getStatusLabel().setText(Status.READY.getStatus());
+        statusPanel.add(Components.getStatusLabel());
+        firstLine.add(statusPanel);
+    }
+
+    /**
+     * Adds the Live Browse toggle to Burptrast
+     * @param browseConfig
+     */
+    private void addBrowseToggle(JPanel browseConfig) {
+        Components.setEnableLiveBrowse(new JRadioButton("Enable"));
+        Components.getEnableLiveBrowse().setEnabled(false);
+        Components.setDisableLiveBrowse(new JRadioButton("Disable"));
+        Components.getDisableLiveBrowse().setEnabled(false);
+        ButtonGroup appGroup = new ButtonGroup();
+        appGroup.add(Components.getEnableLiveBrowse());
+        appGroup.add(Components.getDisableLiveBrowse());
+        Components.getEnableLiveBrowse().addActionListener(e -> {
+            if(!dataModel.isLiveBrowseEnabled()) {
+                disableConfigDueToLiveBrowse();
+                dataModel.setLiveBrowseEnabled(true);
+                if(dataModel.getBrowseCheckThread()!=null&&dataModel.getBrowseCheckThread().isAlive()) {
+                    dataModel.getBrowseCheckThread().notifyThread();
+                }
+                String orgID = Components.getOrgsCombo().getSelectedItem().toString();
+                String appID = dataModel.getAppNameIDMap().get(Components.getAppCombo().getSelectedItem().toString());
+                TSReader reader = new TSReader(dataModel.getCredentials().get(), logger,dataModel,callbacks);
+                BrowseVulnCheckThread vulnCheckThread = new BrowseVulnCheckThread(reader,orgID,appID,dataModel.getCorrelationIDAppender(),callbacks,dataModel,logger);
+                dataModel.getThreadManager().addToThreadList(vulnCheckThread);
+                dataModel.setBrowseCheckThread(vulnCheckThread);
+                dataModel.getThreadManager().getExecutor().execute(vulnCheckThread);
+            }
+        });
+        Components.getDisableLiveBrowse().addActionListener(e -> {
+            if(dataModel.isLiveBrowseEnabled()) {
+                enableConfigDueToLiveBrowse();
+                dataModel.setLiveBrowseEnabled(false);
+                dataModel.getBrowseCheckThread().notifyThread();
+                enableConfigDueToLiveBrowse();
+            }
+        });
+        appGroup.setSelected(Components.getDisableLiveBrowse().getModel(),true);
+        browseConfig.add(Components.getEnableLiveBrowse());
+        browseConfig.add(Components.getDisableLiveBrowse());
+    }
 
 
     /**
@@ -132,96 +181,10 @@ public class ContrastTab implements ITab{
      * @throws InterruptedException
      */
     private void updateRouteTable(String orgID, String appID, TSReader reader) throws IOException, ExecutionException, InterruptedException {
-        Optional<Routes> routes = reader.getRoutes(orgID, appID);
-        if (routes.isPresent()) {
-            Map<Route,Future<Optional<RouteCoverage>>> routeFutureMap = new HashMap<>();
-            for (Route route : routes.get().getRoutes()) {
-                String routeID = route.getRoute_hash();
-                routeFutureMap.put(route, reader.getCoverageForTrace(orgID, appID, routeID));
-            }
-            for(Route route : routeFutureMap.keySet()) {
-                Optional<RouteCoverage> result = routeFutureMap.get(route).get();
-                dataModel.getRouteCoverageMap().put(route,result);
-                if(result.isPresent() ) {
-                    for(RouteCoverageObservationResource observationResource : result.get().getObservations() ) {
-                        dataModel.getRouteTableModel().addRow(new Object[]{true,observationResource.getUrl(),observationResource.getVerb(),false,getLastExercisedDate(route)});
-                    }
-                }
-            }
-        }
-        List<Future<TraceIDDecoractedHttpRequestResponse>> futureReqResponses = new ArrayList<>();
-        for (Trace trace : dataModel.getTraces()) {
-            futureReqResponses.add(reader.getHttpRequest(orgID,trace.getUuid()));
-        }
-        for(Future<TraceIDDecoractedHttpRequestResponse> futureReqRes : futureReqResponses) {
-            HttpRequestResponse hreqRes = futureReqRes.get().getRequestResponse();
-            dataModel.getVulnRequests().add(futureReqRes.get());
-            Optional<VulnTableResult> vulnTableResult = getVulnTableResult(hreqRes);
-            if(vulnTableResult.isPresent()) {
-                dataModel.getRouteTableModel().addRow(new Object[]{true,vulnTableResult.get().getUrl(), vulnTableResult.get().getVerb(), true,""});
-
-            }
-            if(hreqRes.getHttpRequest()!=null) {
-                String text = hreqRes.getHttpRequest().getText();
-                if(text.contains(" ")&&text.contains(" HTTP")) {
-                    String verb = text.split(" ")[0];
-                    String url = text.substring(text.indexOf(" ")).split(" HTTP")[0];
-                }
-            }
-        }
-        for(PathTracePair pathTracePair : getPathsFromNonRequestVulns(orgID,reader)) {
-            String path = pathTracePair.getPath();
-            boolean isFound = false;
-            for( int i = 0; i < dataModel.getRouteTableModel().getRowCount(); i++) {
-                String tablePath = dataModel.getRouteTableModel().getValueAt(i,1).toString();
-                if(tablePath.equals(path)) {
-                    isFound = true;
-                    break;
-                }
-            }
-            if(!isFound) {
-                dataModel.getRouteTableModel().addRow(new Object[]{true,path, "", true,""});
-            }
-            addNonRequestVulnToMap(path,pathTracePair.getTrace());
-        }
-
+        UpdateRouteTableThread updateRouteTableThread = new UpdateRouteTableThread(reader,dataModel,orgID,appID,logger);
+        dataModel.getThreadManager().addToThreadList(updateRouteTableThread);
+        dataModel.getThreadManager().getExecutor().execute(updateRouteTableThread);
     }
-
-    private void addNonRequestVulnToMap(String path,Trace trace) {
-        if(dataModel.getNonRequestPathVulnMap().containsKey(path)) {
-            dataModel.getNonRequestPathVulnMap().get(path).add(trace);
-        } else {
-            Set<Trace> traceSet = new HashSet<>();
-            traceSet.add(trace);
-            dataModel.getNonRequestPathVulnMap().put(path,traceSet);
-        }
-    }
-
-
-    private Optional<VulnTableResult> getVulnTableResult(HttpRequestResponse hreqRes) {
-        if(hreqRes.getHttpRequest()!=null) {
-            String text = hreqRes.getHttpRequest().getText();
-            if(text.contains(" ")&&text.contains(" HTTP")) {
-                String verb = text.split(" ")[0];
-                String url = text.substring(text.indexOf(" ")).split(" HTTP")[0];
-                return Optional.of(new VulnTableResult(url,verb));
-            }
-        }
-        return Optional.empty();
-    }
-
-
-    private String getLastExercisedDate(Route route) {
-        Long lastExercised = route.getExercised();
-        if(lastExercised==null) {
-            return "";
-        } else {
-            String dateString =  new Date(lastExercised).toString();
-            dataModel.getFormattedDateMap().put(dateString,lastExercised);
-            return dateString;
-        }
-    }
-
 
     /**
      * updates the trace table with vulnerabilities
@@ -231,10 +194,9 @@ public class ContrastTab implements ITab{
      * @throws IOException
      */
     private void updateTraceTable(String orgID, String appID, TSReader reader) throws IOException {
-        dataModel.getTraces().clear();
-        dataModel.getTraces().addAll(reader.getTraces(orgID,appID));
-        reader.getTraces(orgID,appID).forEach(trace -> dataModel.getTraceTableModel().addRow(new Object[]{trace.getTitle(),trace.getRule(),trace.getSeverity()}));
-        Components.getTraceTable().updateUI();
+        UpdateTraceTableThread thread = new UpdateTraceTableThread(reader,dataModel,orgID,appID,logger);
+        dataModel.getThreadManager().addToThreadList(thread);
+        dataModel.getThreadManager().getExecutor().execute(thread);
     }
 
 
@@ -255,7 +217,7 @@ public class ContrastTab implements ITab{
                     if (tsCreds.isPresent()) {
                         String orgID = Components.getOrgsCombo().getSelectedItem().toString();
                         String appID = dataModel.getAppNameIDMap().get(Components.getAppCombo().getSelectedItem().toString());
-                        TSReader reader = new TSReader(dataModel.getCredentials().get(), logger,dataModel);
+                        TSReader reader = new TSReader(dataModel.getCredentials().get(), logger,dataModel,callbacks);
                         updateTraceTable(orgID, appID, reader);
                         updateRouteTable(orgID, appID, reader);
                     }
@@ -362,14 +324,13 @@ public class ContrastTab implements ITab{
         Components.getImportRoutesButton().setEnabled(false);
         panel.add(Components.getImportRoutesButton());
         Components.getImportRoutesButton().addActionListener(e -> {
-            new SiteMapImporter(dataModel,callbacks,logger,new TSReader(dataModel.getCredentials().get(),logger,dataModel)).importSiteMapToBurp(
-                    Components.getOrgsCombo().getSelectedItem().toString(),
-                    Components.getAppCombo().getSelectedItem().toString(),
-                    Components.getHostNameField().getText(),
-                    Integer.parseInt(Components.getPortNumberField().getText()),
-                    Components.getProtocolCombo().getSelectedItem().toString(),
-                    Components.getAppContextField().getText()
-                    );
+            try {
+                ImportRoutesToSiteMapThread thread = new ImportRoutesToSiteMapThread(new TSReader(getCreds().get(),logger,dataModel,callbacks),dataModel,logger,callbacks);
+                dataModel.getThreadManager().addToThreadList(thread);
+                dataModel.getThreadManager().getExecutor().execute(thread);
+            } catch (IOException ex) {
+                throw new RuntimeException(ex);
+            }
         });
 
     }
@@ -473,15 +434,10 @@ public class ContrastTab implements ITab{
                 Components.getAppCombo().removeAllItems();
                 dataModel.getAppNameIDMap().clear();
                 if (creds.isPresent()) {
-                    TSReader reader = new TSReader(creds.get(),logger,dataModel);
-                    List<Application> applications = reader.getApplications(Objects.requireNonNull(Components.getOrgsCombo().getSelectedItem()).toString());
-                    applications.forEach(application -> dataModel.getAppNameIDMap().put(application.getName(), application.getId()));
-                    if(dataModel.getSortType().equals(SortType.SORT_BY_NAME)) {
-                        applications.sort(new SortByAppNameComparator());
-                    } else {
-                        applications.sort(new SortByLastSeenComparator());
-                    }
-                    applications.forEach(application -> Components.getAppCombo().addItem(application.getName()));
+                    TSReader reader = new TSReader(creds.get(),logger,dataModel,callbacks);
+                    RefreshAppIDsThread thread  = new RefreshAppIDsThread(reader,dataModel,logger);
+                    dataModel.getThreadManager().addToThreadList(thread);
+                    dataModel.getThreadManager().getExecutor().execute(thread);
                 }
             } catch (IOException|ContrastException ex) {
                 logger.logException("Error occurred while refreshing application list",ex);
@@ -520,9 +476,10 @@ public class ContrastTab implements ITab{
                 Optional<TSCreds> creds = getCreds();
                 Components.getOrgsCombo().removeAllItems();
                 if(creds.isPresent()) {
-                    TSReader reader = new TSReader(creds.get(),logger,dataModel);
-                    List<String> orgIds = reader.getOrgs().stream().map(Organization::getOrgUuid).collect(Collectors.toList());
-                    orgIds.forEach(item->Components.getOrgsCombo().addItem(item));
+                    TSReader reader = new TSReader(creds.get(),logger,dataModel,callbacks);
+                    RefreshOrgIDsThread thread = new RefreshOrgIDsThread(reader,dataModel,logger);
+                    dataModel.getThreadManager().addToThreadList(thread);
+                    dataModel.getThreadManager().getExecutor().execute(thread);
                 }
             } catch (IOException|ContrastException ex) {
                 JOptionPane.showMessageDialog(null, ex+
@@ -542,10 +499,10 @@ public class ContrastTab implements ITab{
      * @param panel
      */
     private void createFileChooser(final JPanel panel){
-        JButton button = new JButton("Select Creds File");
+        Components.setCredsFile(new JButton("Select Creds File"));
         final JLabel label = new JLabel();
         label.setText("Select Config File");
-        button.addActionListener(e -> {
+        Components.getCredsFile().addActionListener(e -> {
             JFileChooser fileChooser = new JFileChooser();
             fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
             int option = fileChooser.showOpenDialog(panel);
@@ -560,12 +517,11 @@ public class ContrastTab implements ITab{
                 label.setText("Selected: " + dataModel.getCredsFile().getName());
                 enableButtons();
                 refreshOrgIDS();
-                refreshApplications();
             }else{
                 label.setText("Open command canceled");
             }
         });
-        panel.add(button);
+        panel.add(Components.getCredsFile());
         panel.add(label);
     }
 
@@ -587,30 +543,28 @@ public class ContrastTab implements ITab{
         Components.getUpdateButton().setEnabled(true);
         Components.getSortByAppNameRadio().setEnabled(true);
         Components.getSortByLastSeenRadio().setEnabled(true);
+        Components.getDisableLiveBrowse().setEnabled(true);
+        Components.getEnableLiveBrowse().setEnabled(true);
     }
 
-
-    private StoryResponse getStoryResponse(String orgID, String traceID,TSReader reader) throws IOException {
-        if(!dataModel.getTraceIDStoryMap().containsKey(traceID)) {
-            StoryResponse response = reader.getStory(orgID,traceID);
-            dataModel.getTraceIDStoryMap().put(traceID,response);
-        }
-        return dataModel.getTraceIDStoryMap().get(traceID);
+    private void disableConfigDueToLiveBrowse() {
+        Components.getCredsFile().setEnabled(false);
+        Components.getOrgIdButton().setEnabled(false);
+        Components.getAppButton().setEnabled(false);
+        Components.getAppCombo().setEnabled(false);
+        Components.getOrgsCombo().setEnabled(false);
+        Components.getSortByAppNameRadio().setEnabled(false);
+        Components.getSortByLastSeenRadio().setEnabled(false);
     }
 
-    private List<PathTracePair> getPathsFromNonRequestVulns(String orgID,TSReader reader) throws IOException {
-        List<PathTracePair> paths = new ArrayList<>();
-        for (Trace trace : dataModel.getTraces()) {
-            StoryResponse response = getStoryResponse(orgID, trace.getUuid(), reader);
-            Story story = response.getStory();
-            if (story.getChapters() != null) {
-                Optional<Chapter> chapter = story.getChapters().stream().filter(chp -> "properties".equals(chp.getType())).findFirst();
-                if (chapter.isPresent() && chapter.get().getPropertyResources() != null && !chapter.get().getPropertyResources().isEmpty()) {
-                    paths.add(new PathTracePair(chapter.get().getPropertyResources().get(0).getName(), trace));
-                }
-            }
-        }
-        return paths;
+    private void enableConfigDueToLiveBrowse() {
+        Components.getCredsFile().setEnabled(true);
+        Components.getOrgIdButton().setEnabled(true);
+        Components.getAppButton().setEnabled(true);
+        Components.getAppCombo().setEnabled(true);
+        Components.getOrgsCombo().setEnabled(true);
+        Components.getSortByAppNameRadio().setEnabled(true);
+        Components.getSortByLastSeenRadio().setEnabled(true);
     }
 
 }
