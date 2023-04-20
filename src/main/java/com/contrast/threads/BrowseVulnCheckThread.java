@@ -105,7 +105,7 @@ public class BrowseVulnCheckThread extends StoppableThread {
 
     private void doPushVuln(TraceIDDecoractedHttpRequestResponse requestResponse, Trace trace) throws IOException {
         RequestResponseGenerator generator = new RequestResponseGenerator();
-        TSCreds creds = dataModel.getCredentials().get();
+        TSCreds creds = TSCreds.getSelectedCreds(dataModel.getTsCreds());
 
         HttpService service = getHttpService();
 

@@ -2,9 +2,10 @@ package burp;
 
 public enum Status {
 
-    READY(" Ready "),
-    LOADING("Loading"),
-    ERROR(" Error ");
+    AWAITING_CREDENTIALS(" Awaiting Credentials "),
+    READY("        Ready         "),
+    LOADING("       Loading        "),
+    ERROR("        Error         ");
 
     private final String status;
 

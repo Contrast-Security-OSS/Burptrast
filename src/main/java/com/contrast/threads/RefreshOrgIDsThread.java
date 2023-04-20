@@ -34,6 +34,7 @@ public class RefreshOrgIDsThread extends StoppableThread {
             dataModel.getThreadManager().addToThreadList(appIDsThread);
             dataModel.getThreadManager().getExecutor().execute(appIDsThread);
             StatusUpdater.updateStatus(Status.READY,dataModel);
+            Components.getCredentialsStatusLabel().setText(Status.READY.getStatus());
         } catch (Exception e) {
             StatusUpdater.updateStatus(Status.ERROR,dataModel);
             JOptionPane.showMessageDialog(null, e+
@@ -42,6 +43,9 @@ public class RefreshOrgIDsThread extends StoppableThread {
                     "\n" +
                     "See Error log under extensions -> Errors for further details.");
             logger.logException("Error occurred while refreshing org list",e);
+            StatusUpdater.updateStatus(Status.ERROR,dataModel);
+            Components.getCredentialsStatusLabel().setText(Status.ERROR.getStatus());
+
             throw new RuntimeException(e);
         }
     }

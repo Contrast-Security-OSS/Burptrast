@@ -27,7 +27,7 @@ public class DataModel {
 
     private File credsFile;
 
-    private Optional<TSCreds> credentials = Optional.empty();
+    private List<TSCreds> tsCreds = new ArrayList<>();
 
     private final Map<String,String> appNameIDMap = new HashMap<>();
     private final List<Trace> traces = new ArrayList<>();
@@ -104,7 +104,6 @@ public class DataModel {
     }
 
     public void setCredsFile(File credsFile) {
-        setCredentials(Optional.empty());
         this.credsFile = credsFile;
     }
 
@@ -135,15 +134,6 @@ public class DataModel {
     public void setTraceTableModel(DefaultTableModel traceTableModel) {
         this.traceTableModel = traceTableModel;
     }
-
-    public Optional<TSCreds> getCredentials() {
-        return credentials;
-    }
-
-    public void setCredentials(Optional<TSCreds> credentials) {
-        this.credentials = credentials;
-    }
-
 
     public Map<String, Long> getAppToServerMap() {
         return appToServerMap;
@@ -212,5 +202,9 @@ public class DataModel {
 
     public void setStatus(Status status) {
         this.status = status;
+    }
+
+    public List<TSCreds> getTsCreds() {
+        return tsCreds;
     }
 }
