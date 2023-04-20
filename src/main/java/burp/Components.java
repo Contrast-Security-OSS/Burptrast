@@ -31,6 +31,15 @@ public class Components {
 
     private static JButton credsFile;
 
+    private static JButton saveCredsFile;
+
+    private static JLabel credentialsStatusLabel;
+
+
+
+    private static JPanel credentialsStatusPanel;
+
+    private static JPanel statusPanel;
 
     private static JLabel statusLabel;
 
@@ -186,6 +195,14 @@ public class Components {
         Components.statusLabel = statusLabel;
     }
 
+    public static JButton getSaveCredsFile() {
+        return saveCredsFile;
+    }
+
+    public static void setSaveCredsFile(JButton saveCredsFile) {
+        Components.saveCredsFile = saveCredsFile;
+    }
+
 
     public static void setButtons(boolean enabled) {
         Components.getOrgIdButton().setEnabled(enabled);
@@ -202,4 +219,27 @@ public class Components {
     }
 
 
+    public static JLabel getCredentialsStatusLabel() {
+        return credentialsStatusLabel;
+    }
+
+    public static void setCredentialsStatusLabel(JLabel credentialsStatusLabel) {
+        Components.credentialsStatusLabel = credentialsStatusLabel;
+    }
+
+    public static JPanel getCredentialsStatusPanel() {
+        return credentialsStatusPanel;
+    }
+
+    public static void setCredentialsStatusPanel(JPanel credentialsStatusPanel) {
+        Components.credentialsStatusPanel = credentialsStatusPanel;
+    }
+
+    public static JPanel getStatusPanel() {
+        return statusPanel;
+    }
+
+    public static void setStatusPanel(JPanel statusPanel) {
+        Components.statusPanel = statusPanel;
+    }
 }

@@ -1,6 +1,11 @@
 package burp;
 
 
+import javax.swing.*;
+import javax.swing.border.LineBorder;
+import javax.swing.border.TitledBorder;
+import java.awt.*;
+
 /**
  * Tracks the current status of Burptrast. Due to multiple threads updating the same underlying status it uses a simple
  * count to work out the status as a thread starts it calls updateStatus(LOADING), which increments the loadingCount.
@@ -11,17 +16,12 @@ package burp;
  * application or org.
  * Once the status changes back to ready and therefore there are no running threads, the ui is reenabled.
  *
- *
- *
  */
 public class StatusUpdater {
 
-
     private static final Object lock = new Object();
 
-
     private static int loadingCount = 0;
-
 
     public static void updateStatus(Status status,DataModel dataModel) {
         synchronized (lock) {
@@ -29,33 +29,56 @@ public class StatusUpdater {
                 dataModel.setStatus(status);
             }
             if(status.equals(Status.ERROR)) {
-                Components.setButtons(true);
-                dataModel.setStatus(Status.ERROR);
-                Components.getStatusLabel().setText(Status.ERROR.getStatus());
-                Components.getStatusLabel().updateUI();
-            }
-            if(dataModel.getStatus()!=null&&!dataModel.getStatus().equals(Status.ERROR)) {
-                if(status.equals(Status.LOADING)) {
-                    loadingCount++;
-                }
-                if(status.equals(Status.READY)) {
+                if(loadingCount>0) {
                     loadingCount--;
                 }
-                if(loadingCount>0) {
-                    Components.setButtons(false);
-                    dataModel.setStatus(Status.LOADING);
-                    Components.getStatusLabel().setText(Status.LOADING.getStatus());
-                    Components.getStatusLabel().updateUI();
-                } else {
-                    Components.setButtons(true);
-                    dataModel.setStatus(Status.READY);
-                    Components.getStatusLabel().setText(Status.READY.getStatus());
-                    Components.getStatusLabel().updateUI();
-                }
+                Components.setButtons(true);
+                setStatus(status,dataModel);
+                setStatusBorder(Color.RED);
+            }
+
+            if(status.equals(Status.LOADING)) {
+                loadingCount++;
+            }
+            if(status.equals(Status.READY)) {
+                loadingCount--;
+            } else if(status.equals((Status.AWAITING_CREDENTIALS))) {
+                loadingCount--;
+            }
+            if(loadingCount>0) {
+                Components.setButtons(false);
+                setStatus(Status.LOADING,dataModel);
+                setStatusBorder(Color.LIGHT_GRAY);
+            } else if(status.equals(Status.READY)){
+                Components.setButtons(true);
+                Components.getCredsFile().setEnabled(true);
+                Components.getSaveCredsFile().setEnabled(true);
+                setStatus(status,dataModel);
+                setStatusBorder(Color.GREEN);
+            } else if(status.equals(Status.AWAITING_CREDENTIALS)){
+                Components.getCredsFile().setEnabled(true);
+                setStatus(status,dataModel);
+                setStatusBorder(Color.LIGHT_GRAY);
             }
         }
+
     }
 
+    private static void setStatus(Status status, DataModel dataModel) {
+        dataModel.setStatus(status);
+        Components.getStatusLabel().setText(status.getStatus());
+        Components.getStatusLabel().updateUI();
+        Components.getCredentialsStatusLabel().setText(status.getStatus());
+        Components.getCredentialsStatusLabel().updateUI();
 
+    }
+
+    private static void setStatusBorder(Color color) {
+        LineBorder lb = new LineBorder(color);
+        Components.getCredentialsStatusPanel().setBorder(
+                BorderFactory.createTitledBorder(lb, "Status", TitledBorder.CENTER, TitledBorder.TOP, null, null));
+        Components.getStatusPanel().setBorder(
+                BorderFactory.createTitledBorder(lb, "Status", TitledBorder.CENTER, TitledBorder.TOP, null, null));
+    }
 
 }

@@ -26,6 +26,7 @@ import javax.swing.table.DefaultTableModel;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -243,13 +244,13 @@ public class TestSiteMapImporter {
         };
     }
 
-    private TSCreds getTestCreds() {
-        return new TSCreds("http://example.com","example","example","example");
+    private List<TSCreds> getTestCreds() {
+        return Collections.singletonList(new TSCreds("http://example.com","example","example","example"));
     }
 
     private DataModel getDataModel(String appName, String appID) {
         DataModel dataModel = new DataModel();
-        dataModel.setCredentials(Optional.of(getTestCreds()));
+        dataModel.getTsCreds().addAll(getTestCreds());
         dataModel.getAppNameIDMap().put(appName,appID);
         return dataModel;
     }

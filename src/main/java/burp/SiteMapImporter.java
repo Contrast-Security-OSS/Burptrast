@@ -41,7 +41,7 @@ public class SiteMapImporter {
     public void importSiteMapToBurp(String orgID, String appName, String hostName, int port, String protocol, String appContext) {
         List<String> matchedPaths = new ArrayList<>();
         try {
-            TSCreds creds = dataModel.getCredentials().get();
+            TSCreds creds = TSCreds.getSelectedCreds(dataModel.getTsCreds());
             String appID = dataModel.getAppNameIDMap().get(appName);
             RequestResponseGenerator generator = new RequestResponseGenerator();
             HttpService service = new HttpService(hostName, port, protocol);

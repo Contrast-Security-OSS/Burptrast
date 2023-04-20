@@ -27,17 +27,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
-public class ContrastTab implements ITab{
+public class ContrastTab {
 
 
 
-    public ContrastTab(IBurpExtenderCallbacks callbacks) {
+    public ContrastTab(IBurpExtenderCallbacks callbacks, DataModel dataModel, Logger logger) {
         this.callbacks = callbacks;
+        this.dataModel = dataModel;
         dataModel.setCorrelationIDAppender(new CorrelationIDAppender(callbacks));
         this.callbacks.registerHttpListener(dataModel.getCorrelationIDAppender());
-        logger = new Logger( new PrintWriter(callbacks.getStdout(), true),
-                new PrintWriter(callbacks.getStderr(), true)
-        );
+        this.logger = logger;
         dataModel.setThreadManager(new ThreadManager());
         this.callbacks.registerExtensionStateListener(dataModel.getThreadManager());
     }
@@ -51,16 +50,15 @@ public class ContrastTab implements ITab{
     private final IBurpExtenderCallbacks callbacks;
     private static Logger logger;
 
-    private static final DataModel dataModel = new DataModel();
+    private static DataModel dataModel;
 
 
 
-    @Override
+
     public String getTabCaption() {
         return "Burptrast Security";
     }
 
-    @Override
     public Component getUiComponent() {
 
         JPanel panel = new JPanel(new BorderLayout());
@@ -68,11 +66,7 @@ public class ContrastTab implements ITab{
         JPanel firstLine = new JPanel(new GridBagLayout());
 
         addStatusField(firstLine);
-        // BurpTrast Credentials Panel
-        JPanel configPanel = new JPanel();
-        configPanel.setBorder( BorderFactory.createTitledBorder("Credentials"));
-        firstLine.add(configPanel);
-        createFileChooser(configPanel);
+
 
         // appConfig Panel contains the org and app chooser as well as the update button.
         // All of these are disabled until a creds file is selected.
@@ -117,12 +111,13 @@ public class ContrastTab implements ITab{
      */
     private void addStatusField(JPanel firstLine) {
         // Status Field
-        JPanel statusPanel = new JPanel();
-        statusPanel.setBorder(BorderFactory.createTitledBorder("Status"));
+
+        Components.setStatusPanel(new JPanel());
+        Components.getStatusPanel().setBorder(BorderFactory.createTitledBorder("Status"));
         Components.setStatusLabel(new JLabel());
-        Components.getStatusLabel().setText(Status.READY.getStatus());
-        statusPanel.add(Components.getStatusLabel());
-        firstLine.add(statusPanel);
+        Components.getStatusLabel().setText(Status.AWAITING_CREDENTIALS.getStatus());
+        Components.getStatusPanel().add(Components.getStatusLabel());
+        firstLine.add( Components.getStatusPanel());
     }
 
     /**
@@ -146,7 +141,7 @@ public class ContrastTab implements ITab{
                 }
                 String orgID = Components.getOrgsCombo().getSelectedItem().toString();
                 String appID = dataModel.getAppNameIDMap().get(Components.getAppCombo().getSelectedItem().toString());
-                TSReader reader = new TSReader(dataModel.getCredentials().get(), logger,dataModel,callbacks);
+                TSReader reader = new TSReader(dataModel.getTsCreds(), logger,dataModel,callbacks);
                 BrowseVulnCheckThread vulnCheckThread = new BrowseVulnCheckThread(reader,orgID,appID,dataModel.getCorrelationIDAppender(),callbacks,dataModel,logger);
                 dataModel.getThreadManager().addToThreadList(vulnCheckThread);
                 dataModel.setBrowseCheckThread(vulnCheckThread);
@@ -208,19 +203,17 @@ public class ContrastTab implements ITab{
         Components.setUpdateButton(new JButton("Update"));
         Components.getUpdateButton().setEnabled(false);
         Components.getUpdateButton().addActionListener(e -> {
-            if (dataModel.getCredsFile() != null) {
+            if (!dataModel.getTsCreds().isEmpty()) {
                 try {
                     dataModel.clearData();
                     dataModel.clearTraceTable();
                     dataModel.clearRouteTable();
-                    Optional<TSCreds> tsCreds = getCreds();
-                    if (tsCreds.isPresent()) {
-                        String orgID = Components.getOrgsCombo().getSelectedItem().toString();
-                        String appID = dataModel.getAppNameIDMap().get(Components.getAppCombo().getSelectedItem().toString());
-                        TSReader reader = new TSReader(dataModel.getCredentials().get(), logger,dataModel,callbacks);
-                        updateTraceTable(orgID, appID, reader);
-                        updateRouteTable(orgID, appID, reader);
-                    }
+                    String orgID = Components.getOrgsCombo().getSelectedItem().toString();
+                    String appID = dataModel.getAppNameIDMap().get(Components.getAppCombo().getSelectedItem().toString());
+                    TSReader reader = new TSReader(dataModel.getTsCreds(), logger,dataModel,callbacks);
+                    updateTraceTable(orgID, appID, reader);
+                    updateRouteTable(orgID, appID, reader);
+
                 } catch (IOException | ContrastException | InterruptedException | ExecutionException ex) {
                     logger.logException("Error occurred while updating tables",ex);
                     throw new RuntimeException(ex);
@@ -324,13 +317,9 @@ public class ContrastTab implements ITab{
         Components.getImportRoutesButton().setEnabled(false);
         panel.add(Components.getImportRoutesButton());
         Components.getImportRoutesButton().addActionListener(e -> {
-            try {
-                ImportRoutesToSiteMapThread thread = new ImportRoutesToSiteMapThread(new TSReader(getCreds().get(),logger,dataModel,callbacks),dataModel,logger,callbacks);
-                dataModel.getThreadManager().addToThreadList(thread);
-                dataModel.getThreadManager().getExecutor().execute(thread);
-            } catch (IOException ex) {
-                throw new RuntimeException(ex);
-            }
+            ImportRoutesToSiteMapThread thread = new ImportRoutesToSiteMapThread(new TSReader(dataModel.getTsCreds(),logger,dataModel,callbacks),dataModel,logger,callbacks);
+            dataModel.getThreadManager().addToThreadList(thread);
+            dataModel.getThreadManager().getExecutor().execute(thread);
         });
 
     }
@@ -428,18 +417,16 @@ public class ContrastTab implements ITab{
      * This calls TS to get an updated list of applications for the specified Org.
      */
     private void refreshApplications() {
-        if (dataModel.getCredsFile() != null) {
+        if (!dataModel.getTsCreds().isEmpty()) {
             try {
-                Optional<TSCreds> creds = getCreds();
                 Components.getAppCombo().removeAllItems();
                 dataModel.getAppNameIDMap().clear();
-                if (creds.isPresent()) {
-                    TSReader reader = new TSReader(creds.get(),logger,dataModel,callbacks);
+                    TSReader reader = new TSReader(dataModel.getTsCreds(),logger,dataModel,callbacks);
                     RefreshAppIDsThread thread  = new RefreshAppIDsThread(reader,dataModel,logger);
                     dataModel.getThreadManager().addToThreadList(thread);
                     dataModel.getThreadManager().getExecutor().execute(thread);
-                }
-            } catch (IOException|ContrastException ex) {
+
+            } catch (ContrastException ex) {
                 logger.logException("Error occurred while refreshing application list",ex);
                 throw new RuntimeException(ex);
             }
@@ -463,25 +450,23 @@ public class ContrastTab implements ITab{
         gbc.gridx = 0;
         gbc.gridy = 3;
         panel.add(Components.getOrgsCombo(),gbc);
-        Components.getOrgIdButton().addActionListener(e -> refreshOrgIDS());
+        Components.getOrgIdButton().addActionListener(e -> refreshOrgIDS(callbacks));
     }
 
     /**
      * Logic that is called when the "Refresh Org IDS" Button is pressed.
      * This calls TS to get an updated list of organizations.
      */
-    private void refreshOrgIDS() {
-        if(dataModel.getCredsFile()!= null) {
+    public static void refreshOrgIDS(IBurpExtenderCallbacks callbacks) {
+        if(!dataModel.getTsCreds().isEmpty()) {
             try {
-                Optional<TSCreds> creds = getCreds();
                 Components.getOrgsCombo().removeAllItems();
-                if(creds.isPresent()) {
-                    TSReader reader = new TSReader(creds.get(),logger,dataModel,callbacks);
-                    RefreshOrgIDsThread thread = new RefreshOrgIDsThread(reader,dataModel,logger);
-                    dataModel.getThreadManager().addToThreadList(thread);
-                    dataModel.getThreadManager().getExecutor().execute(thread);
-                }
-            } catch (IOException|ContrastException ex) {
+                TSReader reader = new TSReader(dataModel.getTsCreds(),logger,dataModel,callbacks);
+                RefreshOrgIDsThread thread = new RefreshOrgIDsThread(reader,dataModel,logger);
+                dataModel.getThreadManager().addToThreadList(thread);
+                dataModel.getThreadManager().getExecutor().execute(thread);
+
+            } catch (ContrastException ex) {
                 JOptionPane.showMessageDialog(null, ex+
                         "\nSee Error log under extensions -> Errors for further details.");
                 logger.logException("Error occurred while refreshing org list",ex);
@@ -498,46 +483,13 @@ public class ContrastTab implements ITab{
      * Also the Org and App Drop downs are populated by calling TeamServer with the newly selected credentials.
      * @param panel
      */
-    private void createFileChooser(final JPanel panel){
-        Components.setCredsFile(new JButton("Select Creds File"));
-        final JLabel label = new JLabel();
-        label.setText("Select Config File");
-        Components.getCredsFile().addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
-            fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-            int option = fileChooser.showOpenDialog(panel);
-            if(option == JFileChooser.APPROVE_OPTION){
-                File file = fileChooser.getSelectedFile();
-                dataModel.setCredsFile(file);
-                if(dataModel.getCredsFile()!=null) {
-                    logger.logMessage("Creds File Selected : " + dataModel.getCredsFile());
-                } else {
-                    logger.logMessage("Creds File is null");
-                }
-                label.setText("Selected: " + dataModel.getCredsFile().getName());
-                enableButtons();
-                refreshOrgIDS();
-            }else{
-                label.setText("Open command canceled");
-            }
-        });
-        panel.add(Components.getCredsFile());
-        panel.add(label);
-    }
 
-    private Optional<TSCreds> getCreds() throws IOException {
-        if(!dataModel.getCredentials().isPresent()) {
-            dataModel.setCredentials(new YamlReader().parseContrastYaml(new File(dataModel.getCredsFile().getAbsolutePath())));
-            return dataModel.getCredentials();
-        } else {
-            return dataModel.getCredentials();
-        }
-    }
+
 
     /**
      * Enables the org, app and update buttons.
      */
-    private void enableButtons() {
+    public static void enableButtons() {
         Components.getOrgIdButton().setEnabled(true);
         Components.getAppButton().setEnabled(true);
         Components.getUpdateButton().setEnabled(true);
@@ -547,7 +499,7 @@ public class ContrastTab implements ITab{
         Components.getEnableLiveBrowse().setEnabled(true);
     }
 
-    private void disableConfigDueToLiveBrowse() {
+    public static void disableConfigDueToLiveBrowse() {
         Components.getCredsFile().setEnabled(false);
         Components.getOrgIdButton().setEnabled(false);
         Components.getAppButton().setEnabled(false);
