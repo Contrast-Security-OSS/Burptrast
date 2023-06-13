@@ -4,6 +4,7 @@ import com.contrast.Logger;
 import com.contrast.YamlReader;
 import com.contrast.YamlWriter;
 import com.contrast.threads.CredentialsRetrieverThread;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -166,9 +167,7 @@ public class CredentialsTab {
                     dataModel.getTsCreds().addAll(new YamlReader().parseContrastYaml(dataModel.getCredsFile()));
                     StatusUpdater.updateStatus(Status.READY,dataModel);
                     Components.getCredsFile().setEnabled(true);
-
-
-                } catch (IOException ex) {
+                } catch (IOException | YAMLException ex) {
                     StatusUpdater.updateStatus(Status.ERROR,dataModel);
                     Components.getCredentialsStatusLabel().setText(Status.ERROR.getStatus());
                     JOptionPane.showMessageDialog(null, ex+

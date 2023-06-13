@@ -3,6 +3,7 @@ package com.contrast.threads;
 import burp.Components;
 import burp.DataModel;
 import burp.IBurpExtenderCallbacks;
+import burp.PortResolver;
 import burp.SiteMapImporter;
 import burp.Status;
 import burp.StatusUpdater;
@@ -31,7 +32,7 @@ public class ImportRoutesToSiteMapThread extends StoppableThread {
                 Components.getOrgsCombo().getSelectedItem().toString(),
                 Components.getAppCombo().getSelectedItem().toString(),
                 Components.getHostNameField().getText(),
-                Integer.parseInt(Components.getPortNumberField().getText()),
+                PortResolver.getPort(),
                 Components.getProtocolCombo().getSelectedItem().toString(),
                 Components.getAppContextField().getText()
         );

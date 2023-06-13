@@ -380,7 +380,7 @@ public class TSReader {
 
         IHttpService service = callbacks.getHelpers().buildHttpService(host,port,true);
         List<String> headers = new ArrayList<>();
-        headers.add(method.name()+" "+ path+ " HTTP/2" );
+        headers.add(method.name()+" "+ path+ " HTTP/1.1" );
         if(useAPIAuth) {
             TSCreds cred = TSCreds.getSelectedCreds(creds);
             headers.add(RequestConstants.AUTHORIZATION + ": " + ContrastSDKUtils.makeAuthorizationToken(cred.getUserName(), cred.getServiceKey()));

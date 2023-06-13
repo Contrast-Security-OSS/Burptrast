@@ -20,6 +20,10 @@ import javax.swing.*;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -230,7 +234,7 @@ public class ContrastTab {
         Components.getProtocolCombo().addItem("http");
         Components.getProtocolCombo().addItem("https");
         panel.add(Components.getProtocolCombo());
-        Components.setHostNameField(new TextField());
+        Components.setHostNameField(new TextField("",20));
         Components.getHostNameField().setText("localhost");
         Components.setPortNumberField(new TextField());
         Components.getPortNumberField().setText("8080");
@@ -249,20 +253,94 @@ public class ContrastTab {
     }
 
     private void addPathUpdater() {
-        Components.getProtocolCombo().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
-        Components.getHostNameField().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
-        Components.getPortNumberField().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
-        Components.getAppContextField().addActionListener(e -> Components.getPathLabel().setText(getPathString()));
+        Components.getProtocolCombo().addItemListener(
+                e -> Components.getPathLabel().setText(getPathString())
+        );
+        Components.getHostNameField().addKeyListener(
+                new KeyListener() {
+                    @Override
+                    public void keyTyped(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+                    }
+
+                    @Override
+                    public void keyPressed(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+
+                    }
+
+                    @Override
+                    public void keyReleased(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+                    }
+                }
+
+
+        );
+        Components.getPortNumberField().addKeyListener(
+                new KeyListener() {
+                    @Override
+                    public void keyTyped(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+                    }
+
+                    @Override
+                    public void keyPressed(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+
+                    }
+
+                    @Override
+                    public void keyReleased(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+                    }
+                }
+
+
+        );
+        Components.getAppContextField().addKeyListener(
+                new KeyListener() {
+                    @Override
+                    public void keyTyped(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+                    }
+
+                    @Override
+                    public void keyPressed(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+
+                    }
+
+                    @Override
+                    public void keyReleased(KeyEvent e) {
+                        Components.getPathLabel().setText(getPathString());
+                    }
+                }
+
+
+        );
     }
 
     private String getPathString() {
         StringBuilder msg = new StringBuilder();
-        msg.append(Components.getProtocolCombo().getSelectedItem())
-                .append("://")
-                .append(Components.getHostNameField().getText())
-                .append(":")
-                .append(Components.getPortNumberField().getText())
-                .append(Components.getAppContextField().getText());
+        String pathContext = Components.getAppContextField().getText();
+        if(!pathContext.startsWith("/") && !pathContext.isEmpty()) {
+            pathContext = "/"+pathContext;
+        }
+        if(Components.getPortNumberField().getText().isEmpty()) {
+            msg.append(Components.getProtocolCombo().getSelectedItem())
+                    .append("://")
+                    .append(Components.getHostNameField().getText())
+                    .append(Components.getPortNumberField().getText())
+                    .append(pathContext);
+        } else {
+            msg.append(Components.getProtocolCombo().getSelectedItem())
+                    .append("://")
+                    .append(Components.getHostNameField().getText())
+                    .append(":")
+                    .append(Components.getPortNumberField().getText())
+                    .append(pathContext);
+        }
         return msg.toString();
     }
 
@@ -505,6 +583,8 @@ public class ContrastTab {
         Components.getAppButton().setEnabled(false);
         Components.getAppCombo().setEnabled(false);
         Components.getOrgsCombo().setEnabled(false);
+        Components.getUpdateButton().setEnabled(false);
+        Components.getImportRoutesButton().setEnabled(false);
         Components.getSortByAppNameRadio().setEnabled(false);
         Components.getSortByLastSeenRadio().setEnabled(false);
     }
@@ -514,7 +594,9 @@ public class ContrastTab {
         Components.getOrgIdButton().setEnabled(true);
         Components.getAppButton().setEnabled(true);
         Components.getAppCombo().setEnabled(true);
+        Components.getUpdateButton().setEnabled(true);
         Components.getOrgsCombo().setEnabled(true);
+        Components.getImportRoutesButton().setEnabled(true);
         Components.getSortByAppNameRadio().setEnabled(true);
         Components.getSortByLastSeenRadio().setEnabled(true);
     }

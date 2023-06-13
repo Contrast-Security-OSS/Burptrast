@@ -12,7 +12,7 @@ import java.awt.*;
  * When a subsequent call of updateStatus(READY) is made, it decrements the count. A count of 0 means ready and >0 means
  * loading.
  * When loading it will change the text of the status field int the UI to "loading" and disable all buttons. This
- * ensures we don't get into a weird state where half way through processing traces, we change the underlying
+ * ensures we don't get into a weird state where halfway through processing traces, we change the underlying
  * application or org.
  * Once the status changes back to ready and therefore there are no running threads, the ui is reenabled.
  *

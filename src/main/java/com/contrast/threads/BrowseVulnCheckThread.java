@@ -5,6 +5,7 @@ import burp.CorrelationIDAppender;
 import burp.DataModel;
 import burp.IBurpExtenderCallbacks;
 import burp.IHttpRequestResponse;
+import burp.PortResolver;
 import burp.ScanIssue;
 import com.contrast.HttpService;
 import com.contrast.Logger;
@@ -130,8 +131,9 @@ public class BrowseVulnCheckThread extends StoppableThread {
 
     private HttpService getHttpService() {
         return new HttpService( Components.getHostNameField().getText(),
-                Integer.parseInt(Components.getPortNumberField().getText()),Components.getProtocolCombo().getSelectedItem().toString());
+                PortResolver.getPort(),Components.getProtocolCombo().getSelectedItem().toString());
     }
+
 
 
     @Override
