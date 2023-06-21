@@ -1,4 +1,4 @@
-# Burptrast Security
+# Burptrast
 
 Burptrast is designed to pull endpoint information from Teamserver and import it into Burp's sitemap.
 The endpoints come from two sources.
@@ -7,6 +7,9 @@ The endpoints come from two sources.
 
 The full HTTP Request that generated the Vulnerability is stored in TS and is available via the API. This is imported into Burp. While there is likely to be relatively few of these, they do have the advantage of having the information required to trigger the endpoint. Request/Path Params, Message Body etc.
 Endpoints detected by the agent will only have the Path and the HTTP Method ( if you are lucky ). But you are more likely to get all of the endpoints for this application. Hopefully more endpoint information can be gathered by the agent in the future.
+
+## CVE-2023-22725
+To see what Burptrast can do see [README.md](docs%2FCVE-2023-33725%2FREADME.md) for details of a XSS to Admin Account Takeover in the Broadleaf Ecommerce platform.
 
 ## Live Browsing
 Live Browsing when enabled, allows you to explore the application via the Burp proxy and get real time feedback from Assess.
