@@ -1,5 +1,6 @@
 package com.contrast;
 
+import burp.Components;
 import burp.DataModel;
 import burp.IBurpExtenderCallbacks;
 import burp.ICookie;
@@ -38,6 +39,7 @@ import com.google.gson.JsonParser;
 
 import javax.swing.*;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -177,13 +179,56 @@ public class TSReader {
      * @return
      * @throws IOException
      */
-    public List<Trace> getTraces(String orgID, String appId) throws IOException, ContrastException {
+    public List<Trace> getTraces(String orgID, String appId, Optional<DataModel> dataModel) throws IOException, ContrastException {
+        List<Trace> tracesToReturn = new ArrayList<>();
+
         logger.logMessage("get traces for orgid : " + orgID + " appid " + appId);
         TraceFilterBody body = new TraceFilterBody();
         byte[] data = getHTTPRequest(HttpMethod.POST, getPath()+urlBuilder.getTracesWithBodyUrl(orgID, appId),getHost(),getPort(),gson.toJson(body));
-        List<Trace> traces =  gson.fromJson(new String(data),Traces.class).getTraces();
-        logger.logMessage("found " + traces.size() + " traces");
-        return traces;
+        Traces traces = gson.fromJson(new String(data),Traces.class);
+        List<Trace> traceLists = traces.getTraces();
+        if(dataModel.isPresent()) {
+            dataModel.get().getTraces().addAll(traces.getTraces());
+            traces.getTraces().forEach(trace -> dataModel.get().getTraceTableModel().addRow(new Object[]{trace.getTitle(),trace.getRule(),trace.getSeverity()}));
+            Components.getTraceTable().updateUI();
+        }
+        tracesToReturn.addAll(traceLists);
+        if(traces.getTraces().size()<traces.getCount()) {
+            tracesToReturn.addAll(getTracesPaginated(orgID,appId,traces.getTraces().size(),dataModel));
+        }
+        logger.logMessage("found " + tracesToReturn.size() + " traces");
+        return tracesToReturn;
+    }
+
+    private List<Trace> getTracesPaginated(String orgID, String appId, int startPoint,Optional<DataModel> dataModel) throws MalformedURLException, UnsupportedEncodingException {
+        List<Trace> tracesToReturn = new ArrayList<>();
+        logger.logMessage("get traces for orgid : " + orgID + " appid " + appId);
+        TraceFilterBody body = new TraceFilterBody();
+        int requestLimit = 20;
+        byte[] data = getHTTPRequest(HttpMethod.POST, getTraceURLPaginated(orgID,appId,startPoint,requestLimit),getHost(),getPort(),gson.toJson(body));
+        Traces traces = gson.fromJson(new String(data),Traces.class);
+        List<Trace> traceLists = traces.getTraces();
+        tracesToReturn.addAll(traceLists);
+        if(dataModel.isPresent()) {
+            dataModel.get().getTraces().addAll(traces.getTraces());
+            traces.getTraces().forEach(trace -> dataModel.get().getTraceTableModel().addRow(new Object[]{trace.getTitle(),trace.getRule(),trace.getSeverity()}));
+            Components.getTraceTable().updateUI();
+        }
+        if(traces.getTraces().size()+startPoint<traces.getCount()) {
+            tracesToReturn.addAll(getTracesPaginated(orgID,appId,traces.getTraces().size()+startPoint,dataModel));
+        }
+        logger.logMessage("found " + traceLists.size() + " traces");
+        return tracesToReturn;
+    }
+
+    private String getTraceURLPaginated(String orgID,String appId, int startPoint, int sizeLimit) throws MalformedURLException, UnsupportedEncodingException {
+        StringBuilder url = new StringBuilder();
+        url.append(getPath()+urlBuilder.getTracesWithBodyUrl(orgID, appId));
+        url.append("?limit="+sizeLimit);
+        url.append("&offset="+startPoint);
+        return url.toString();
+
+
     }
 
 
@@ -195,6 +240,7 @@ public class TSReader {
      * @throws IOException
      */
     public Optional<Routes> getRoutes(String orgID, String appID) throws IOException,ContrastException {
+       // getObservabilityData(orgID,appID);
         logger.logMessage("get routes for orgid : " + orgID + " appid " + appID);
         String url = "/ng/%s/applications/%s/route";
         url = String.format(url, orgID,appID);
@@ -322,6 +368,16 @@ public class TSReader {
         }
     }
 
+    public void getObservabilityData(String orgId, String appID) {
+        String url = "/api/ui/observe/v1/organizations/"+orgId+"/applications/"+appID+"/resources?page=0&size=100";
+        try {
+            byte[] data = getHTTPRequest(HttpMethod.POST, url, getHost(), getPort(), "");
+            logger.logMessage(new String(data));
+        } catch (IOException e) {
+            logger.logException("unable to get observability data",e);
+        }
+    }
+
 
 
 
@@ -351,6 +407,10 @@ public class TSReader {
         return new URL(getURL()).getHost();
     }
 
+    private boolean isHttps() throws MalformedURLException {
+        return getURL().toLowerCase().trim().startsWith("https");
+    }
+
     private int getPort() throws MalformedURLException {
         URL url =  new URL(getURL());
         int port = url.getPort();
@@ -360,7 +420,7 @@ public class TSReader {
         return port;
     }
 
-    private byte[] getHTTPRequest(HttpMethod method, String path, String host, int port, String body) {
+    private byte[] getHTTPRequest(HttpMethod method, String path, String host, int port, String body) throws MalformedURLException {
         IHttpRequestResponse requestResponse =  getHTTPRequest(method,path,host,port,body,"Content-Type: application/json; charset=UTF-8",true,
                 Collections.emptyList(),Collections.emptyList());
         IResponseInfo info = callbacks.getHelpers().analyzeResponse(requestResponse.getResponse());
@@ -376,9 +436,9 @@ public class TSReader {
 
 
     private IHttpRequestResponse getHTTPRequest(HttpMethod method, String path, String host, int port, String body,
-                                                String contentType, boolean useAPIAuth,List<String> additionalHeaders,List<ICookie> cookies) {
+                                                String contentType, boolean useAPIAuth,List<String> additionalHeaders,List<ICookie> cookies) throws MalformedURLException {
 
-        IHttpService service = callbacks.getHelpers().buildHttpService(host,port,true);
+        IHttpService service = callbacks.getHelpers().buildHttpService(host,port,isHttps());
         List<String> headers = new ArrayList<>();
         headers.add(method.name()+" "+ path+ " HTTP/1.1" );
         if(useAPIAuth) {
@@ -433,7 +493,8 @@ public class TSReader {
                 StatusUpdater.updateStatus(Status.ERROR,dataModel);
                 JOptionPane.showMessageDialog(null, "Unable to authenticate with TeamServer, status code : " + info.getStatusCode());
             }
-            throw new ContrastException("Unable to make request to TS API. HTTP Status Code: " + info.getStatusCode());
+            logger.logError("Unable to make request to TS API. HTTP Status Code: " + info.getStatusCode()+ " for request : "+new String(requestResponse.getRequest()));
+            throw new ContrastException("Unable to make request to TS API. HTTP Status Code: " + info.getStatusCode()+ " for request : "+new String(requestResponse.getRequest()));
         } else {
             logger.logError("error retrieving data " +info.getStatusCode());
             int bodyOffset = info.getBodyOffset();

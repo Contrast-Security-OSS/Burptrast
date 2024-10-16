@@ -9,6 +9,7 @@ import com.contrast.TSReader;
 import com.contrast.threads.StoppableThread;
 
 import java.io.IOException;
+import java.util.Optional;
 
 public class UpdateTraceTableThread extends StoppableThread {
 
@@ -34,8 +35,7 @@ public class UpdateTraceTableThread extends StoppableThread {
         try {
             StatusUpdater.updateStatus(Status.LOADING,dataModel);
             dataModel.getTraces().clear();
-            dataModel.getTraces().addAll(reader.getTraces(orgID,appID));
-            reader.getTraces(orgID,appID).forEach(trace -> dataModel.getTraceTableModel().addRow(new Object[]{trace.getTitle(),trace.getRule(),trace.getSeverity()}));
+            reader.getTraces(orgID,appID, Optional.of(dataModel));
             Components.getTraceTable().updateUI();
         } catch (IOException e) {
             StatusUpdater.updateStatus(Status.ERROR,dataModel);

@@ -42,6 +42,8 @@ public class Components {
     private static JPanel statusPanel;
 
     private static JLabel statusLabel;
+    private static JPanel routeStatsPanel;
+    private static JLabel routeStatsLabel;
 
     public static TextField getPortNumberField() {
         return portNumberField;
@@ -154,6 +156,14 @@ public class Components {
     public static void setRouteTable(JTable routeTable) {
         Components.routeTable = routeTable;
     }
+
+    public static JPanel getRouteStatsPanel() { return routeStatsPanel;}
+
+    public static void setRouteStatsPanel(JPanel routeStatsPanel) { Components.routeStatsPanel = routeStatsPanel;}
+
+    public static JLabel getRouteStatsLabel() { return routeStatsLabel;}
+
+    public static void setRouteStatsLabel(JLabel routeStatsLabel) { Components.routeStatsLabel = routeStatsLabel;}
 
     public static JLabel getPathLabel() {
         return pathLabel;

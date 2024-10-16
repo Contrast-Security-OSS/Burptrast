@@ -37,7 +37,6 @@ public class SiteMapImporter {
         this.reader = reader;
     }
 
-
     public void importSiteMapToBurp(String orgID, String appName, String hostName, int port, String protocol, String appContext) {
         List<String> matchedPaths = new ArrayList<>();
         try {

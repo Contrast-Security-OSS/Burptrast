@@ -97,16 +97,29 @@ public class ContrastTab {
 
         // Route Panel Contains the site map retrieved from TeamServer
         JPanel routePanel = new JPanel(new BorderLayout());
-        JPanel subPanel = new JPanel(new GridBagLayout());
-        subPanel.setBorder(BorderFactory.createTitledBorder("Site Map Config"));
+        JPanel siteMapConfigPanel = new JPanel(new GridBagLayout());
+        siteMapConfigPanel.setBorder(BorderFactory.createTitledBorder("Site Map Config"));
         routePanel.setBorder(BorderFactory.createTitledBorder("Site Map"));
-        routePanel.add(subPanel,BorderLayout.BEFORE_FIRST_LINE);
-        addHttpService(subPanel);
-        addImportRoutesToSiteMapButton(subPanel);
+        routePanel.add(siteMapConfigPanel,BorderLayout.BEFORE_FIRST_LINE);
+        addHttpService(siteMapConfigPanel);
+        addImportRoutesToSiteMapButton(siteMapConfigPanel);
+        JPanel routeCoverageStatsPanel = new JPanel();
+        routeCoverageStatsPanel.setBorder(BorderFactory.createTitledBorder("Route Coverage Stats"));
+        addRouteCoverage(routeCoverageStatsPanel);
+        siteMapConfigPanel.add(routeCoverageStatsPanel);
+
+
         addRouteTable(routePanel);
         panel.add(routePanel,BorderLayout.CENTER);
 
         return panel;
+    }
+
+    private void addRouteCoverage(JPanel routeCoverageStatsPanel) {
+        Components.setRouteStatsPanel(routeCoverageStatsPanel);
+        Components.setRouteStatsLabel(new JLabel());
+        Components.getRouteStatsLabel().setText("                     ");
+        Components.getRouteStatsPanel().add(Components.getRouteStatsLabel());
     }
 
     /**
@@ -139,6 +152,7 @@ public class ContrastTab {
         Components.getEnableLiveBrowse().addActionListener(e -> {
             if(!dataModel.isLiveBrowseEnabled()) {
                 disableConfigDueToLiveBrowse();
+                dataModel.clearTraceTable();
                 dataModel.setLiveBrowseEnabled(true);
                 if(dataModel.getBrowseCheckThread()!=null&&dataModel.getBrowseCheckThread().isAlive()) {
                     dataModel.getBrowseCheckThread().notifyThread();

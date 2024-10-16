@@ -60,10 +60,11 @@ public class BrowseVulnCheckThread extends StoppableThread {
             }
             try {
                 if(firstRun) {
-                    traces.addAll(reader.getTraces(orgID,appID));
+                    traces.addAll(reader.getTraces(orgID,appID,Optional.of(dataModel)));
                     firstRun = false;
                 } else {
-                    List<Trace> newTraces = reader.getTraces(orgID,appID);
+                    dataModel.clearTraceTable();
+                    List<Trace> newTraces = reader.getTraces(orgID,appID,Optional.of(dataModel));
                     List<String> oldTraceIDS = traces.stream().map(Trace::getUuid).collect(Collectors.toList());
                     List<Trace> unseenTraces = newTraces.stream().filter(trace -> !oldTraceIDS.contains(trace.getUuid())).collect(Collectors.toList());
                     for(Trace unseenTrace : unseenTraces) {

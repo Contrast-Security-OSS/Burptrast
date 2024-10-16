@@ -143,7 +143,24 @@ public class UpdateRouteTableThread extends StoppableThread {
             StatusUpdater.updateStatus(Status.ERROR,dataModel);
             throw new RuntimeException(e);
         }
+        updateRouteCoverageStats();
         StatusUpdater.updateStatus(Status.READY,dataModel);
+    }
+
+    private void updateRouteCoverageStats() {
+        int routeCount = dataModel.getRouteCoverageMap().keySet().size();
+        int exercisedCount = 0;
+        for(Route route : dataModel.getRouteCoverageMap().keySet()) {
+           if(!(route.getExercised()==null||route.getExercised()==0)) {
+               exercisedCount++;
+           }
+        }
+        if(exercisedCount!=0) {
+            Components.getRouteStatsLabel().setText("Routes: " + routeCount + " | Exercised: " + exercisedCount + " | Percentage Exercised : " + ((exercisedCount * 100) / routeCount)+"%");
+        } else {
+            Components.getRouteStatsLabel().setText("Routes: " + routeCount + " | Exercised: " + exercisedCount + " | Percentage Exercised : 0%" );
+        }
+        Components.getRouteStatsLabel().updateUI();
     }
 
     private void addNonRequestVulnToMap(String path,Trace trace) {
