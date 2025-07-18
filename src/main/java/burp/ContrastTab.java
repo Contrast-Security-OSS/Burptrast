@@ -17,6 +17,8 @@ import com.contrastsecurity.exceptions.ContrastException;
 import com.contrastsecurity.models.Application;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
@@ -244,94 +246,137 @@ public class ContrastTab {
 
 
     private void addHttpService(JPanel panel) {
+        // Configure protocol combo box
         Components.setProtocolCombo(new JComboBox<>());
         Components.getProtocolCombo().addItem("http");
         Components.getProtocolCombo().addItem("https");
-        panel.add(Components.getProtocolCombo());
-        Components.setHostNameField(new TextField("",20));
+        Components.getProtocolCombo().setPreferredSize(new Dimension(80, 25));
+        Components.getProtocolCombo().setMinimumSize(new Dimension(80, 25));
+
+        // Configure hostname field with minimum and preferred size
+        Components.setHostNameField(new JTextField("", 20));
         Components.getHostNameField().setText("localhost");
-        Components.setPortNumberField(new TextField());
+        Components.getHostNameField().setMinimumSize(new Dimension(150, 25));
+        Components.getHostNameField().setPreferredSize(new Dimension(200, 25));
+
+        // Configure port field with minimum size to prevent collapsing
+        Components.setPortNumberField(new JTextField());
         Components.getPortNumberField().setText("8080");
-        Components.setAppContextField(new TextField("",20));
+        Components.getPortNumberField().setMinimumSize(new Dimension(60, 25));
+        Components.getPortNumberField().setPreferredSize(new Dimension(60, 25));
+
+        // Configure app context field with minimum size
+        Components.setAppContextField(new JTextField("", 20));
+        Components.setAppContextField(new JTextField("", 20));
+        Components.getAppContextField().setMinimumSize(new Dimension(150, 25));
+        Components.getAppContextField().setPreferredSize(new Dimension(200, 25));
+
+        // Configure the path label
         Components.setPathLabel(new JLabel());
         Components.getPathLabel().setText(getPathString());
+
+        // Set up the path updater
         addPathUpdater();
-        panel.add(Components.getHostNameField());
-        panel.add(Components.getPortNumberField());
-        panel.add(Components.getAppContextField());
+
+        // Use a GridBagLayout for more control over component sizing
+        panel.setLayout(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.insets = new Insets(2, 2, 2, 2);
+
+        // Add protocol combo
+        c.gridx = 0;
+        c.gridy = 0;
+        c.weightx = 0.1;
+        panel.add(Components.getProtocolCombo(), c);
+
+        // Add hostname field
+        c.gridx = 1;
+        c.gridy = 0;
+        c.weightx = 0.4;
+        panel.add(Components.getHostNameField(), c);
+
+        // Add port field
+        c.gridx = 2;
+        c.gridy = 0;
+        c.weightx = 0.1;
+        panel.add(Components.getPortNumberField(), c);
+
+        // Add app context field
+        c.gridx = 3;
+        c.gridy = 0;
+        c.weightx = 0.4;
+        panel.add(Components.getAppContextField(), c);
+
+        // Add URL panel on next row, spanning all columns
         JPanel subPanel = new JPanel();
         subPanel.setBorder(BorderFactory.createTitledBorder("URL"));
         subPanel.add(Components.getPathLabel());
-        panel.add(subPanel);
 
+        c.gridx = 0;
+        c.gridy = 1;
+        c.gridwidth = 4;
+        c.weightx = 1.0;
+        panel.add(subPanel, c);
     }
 
     private void addPathUpdater() {
         Components.getProtocolCombo().addItemListener(
                 e -> Components.getPathLabel().setText(getPathString())
         );
-        Components.getHostNameField().addKeyListener(
-                new KeyListener() {
+        Components.getHostNameField().getDocument().addDocumentListener(
+                new DocumentListener() {
                     @Override
-                    public void keyTyped(KeyEvent e) {
+                    public void insertUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
                     }
 
                     @Override
-                    public void keyPressed(KeyEvent e) {
+                    public void removeUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
-
                     }
 
                     @Override
-                    public void keyReleased(KeyEvent e) {
+                    public void changedUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
                     }
                 }
-
-
         );
-        Components.getPortNumberField().addKeyListener(
-                new KeyListener() {
+        Components.getPortNumberField().getDocument().addDocumentListener(
+                new DocumentListener() {
                     @Override
-                    public void keyTyped(KeyEvent e) {
+                    public void insertUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
                     }
 
                     @Override
-                    public void keyPressed(KeyEvent e) {
+                    public void removeUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
-
                     }
 
                     @Override
-                    public void keyReleased(KeyEvent e) {
+                    public void changedUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
                     }
                 }
-
-
         );
-        Components.getAppContextField().addKeyListener(
-                new KeyListener() {
+        Components.getAppContextField().getDocument().addDocumentListener(
+                new DocumentListener() {
                     @Override
-                    public void keyTyped(KeyEvent e) {
+                    public void insertUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
                     }
 
                     @Override
-                    public void keyPressed(KeyEvent e) {
+                    public void removeUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
-
                     }
 
                     @Override
-                    public void keyReleased(KeyEvent e) {
+                    public void changedUpdate(DocumentEvent e) {
                         Components.getPathLabel().setText(getPathString());
                     }
                 }
-
-
         );
     }
 
@@ -365,38 +410,47 @@ public class ContrastTab {
      * @param panel
      */
     private void addRouteTable(JPanel panel) {
+        // Create the table model first
         dataModel.setRouteTableModel(new NonEditableTableModel());
         dataModel.getRouteTableModel().setColumnIdentifiers(ROUTE_TABLE_COL_NAMES);
-        Components.setRouteTable(new RouteTable());
-        Components.getRouteTable().setModel(dataModel.getRouteTableModel());
-        JCheckBox selectedCheckBox =  new JCheckBox("Selected");
+
+        // Create the route table and then set its model
+        RouteTable routeTable = new RouteTable();
+        routeTable.setModel(dataModel.getRouteTableModel());
+        Components.setRouteTable(routeTable);
+
+        // Configure checkbox for "Selected" column
+        JCheckBox selectedCheckBox = new JCheckBox("Selected");
         selectedCheckBox.setSelected(true);
         selectedCheckBox.addActionListener(e -> {
             JCheckBox box = (JCheckBox) e.getSource();
             Boolean isSelected = box.isSelected();
-            for( int i = 0; i<dataModel.getRouteTableModel().getRowCount() ;i++) {
-                dataModel.getRouteTableModel().setValueAt(isSelected,i,0);
+            for(int i = 0; i < dataModel.getRouteTableModel().getRowCount(); i++) {
+                dataModel.getRouteTableModel().setValueAt(isSelected, i, 0);
             }
         });
+
+        // Set up column renderers and sizes
         Components.getRouteTable().getColumnModel().getColumn(0).setHeaderRenderer(new EditableHeaderRenderer(selectedCheckBox));
         Components.getRouteTable().getColumnModel().getColumn(0).setMaxWidth(80);
         Components.getRouteTable().getColumnModel().getColumn(0).setMinWidth(80);
         Components.getRouteTable().getColumnModel().getColumn(0).setPreferredWidth(80);
-
         Components.getRouteTable().getColumnModel().getColumn(1).setPreferredWidth(300);
         Components.getRouteTable().getColumnModel().getColumn(2).setMaxWidth(50);
         Components.getRouteTable().getColumnModel().getColumn(3).setMaxWidth(100);
         Components.getRouteTable().getColumnModel().getColumn(4).setMaxWidth(250);
         Components.getRouteTable().getColumnModel().getColumn(4).setPreferredWidth(250);
 
+        // Create scroll pane after table is fully configured
         JScrollPane scrollPane = new JScrollPane(Components.getRouteTable());
         Components.getRouteTable().setFillsViewportHeight(true);
-        TableRowSorter<TableModel> sorter
-                = new TableRowSorter<>(Components.getRouteTable().getModel());
+
+        // Add sorter after everything else is set up
+        TableRowSorter<TableModel> sorter = new TableRowSorter<>(Components.getRouteTable().getModel());
         sorter.setComparator(4, new RouteTableComparator(dataModel));
         Components.getRouteTable().setRowSorter(sorter);
-        panel.add(scrollPane,BorderLayout.CENTER);
 
+        panel.add(scrollPane, BorderLayout.CENTER);
     }
 
     /**
@@ -422,16 +476,23 @@ public class ContrastTab {
      * @param panel
      */
     private void addTraceTable(JPanel panel) {
+        // Create the table model first
         dataModel.setTraceTableModel(new NonEditableTableModel());
         dataModel.getTraceTableModel().setColumnIdentifiers(TRACE_TABLE_COL_NAMES);
-        Components.setTraceTable( new JTable());
-        Components.getTraceTable().setModel(dataModel.getTraceTableModel());
 
-        JScrollPane scrollPane = new JScrollPane(Components.getTraceTable());
+        // Create JTable with the model directly to avoid a null model state
+        JTable traceTable = new JTable(dataModel.getTraceTableModel());
+        Components.setTraceTable(traceTable);
+
+        // Configure the table
         Components.getTraceTable().setFillsViewportHeight(true);
-        panel.add(scrollPane,BorderLayout.CENTER);
-        TableRowSorter<TableModel> sorter
-                = new TableRowSorter<>(Components.getTraceTable().getModel());
+
+        // Create the scroll pane after the table is fully configured
+        JScrollPane scrollPane = new JScrollPane(Components.getTraceTable());
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        // Add the sorter after everything else is set up
+        TableRowSorter<TableModel> sorter = new TableRowSorter<>(Components.getTraceTable().getModel());
         Components.getTraceTable().setRowSorter(sorter);
     }
 
@@ -616,6 +677,3 @@ public class ContrastTab {
     }
 
 }
-
-
-

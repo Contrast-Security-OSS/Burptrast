@@ -5,9 +5,9 @@ import java.awt.*;
 
 public class Components {
 
-    private static TextField portNumberField;
-    private static TextField hostNameField;
-    private static TextField appContextField;
+    private static JTextField portNumberField;
+    private static JTextField hostNameField;
+    private static JTextField appContextField;
     private static JComboBox<String> protocolCombo;
     private static JComboBox<String> orgsCombo;
     private static JComboBox<String> appCombo;
@@ -45,27 +45,27 @@ public class Components {
     private static JPanel routeStatsPanel;
     private static JLabel routeStatsLabel;
 
-    public static TextField getPortNumberField() {
+    public static JTextField getPortNumberField() {
         return portNumberField;
     }
 
-    public static void setPortNumberField(TextField portNumberField) {
+    public static void setPortNumberField(JTextField portNumberField) {
         Components.portNumberField = portNumberField;
     }
 
-    public static TextField getHostNameField() {
+    public static JTextField getHostNameField() {
         return hostNameField;
     }
 
-    public static void setHostNameField(TextField hostNameField) {
+    public static void setHostNameField(JTextField hostNameField) {
         Components.hostNameField = hostNameField;
     }
 
-    public static TextField getAppContextField() {
+    public static JTextField getAppContextField() {
         return appContextField;
     }
 
-    public static void setAppContextField(TextField appContextField) {
+    public static void setAppContextField(JTextField appContextField) {
         Components.appContextField = appContextField;
     }
 

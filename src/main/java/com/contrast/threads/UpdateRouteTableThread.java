@@ -199,7 +199,9 @@ public class UpdateRouteTableThread extends StoppableThread {
 
     private List<PathTracePair> getPathsFromNonRequestVulns(String orgID,TSReader reader) throws IOException {
         List<PathTracePair> paths = new ArrayList<>();
-        for (Trace trace : dataModel.getTraces()) {
+        // Create a copy of the traces collection to avoid ConcurrentModificationException
+        List<Trace> tracesCopy = new ArrayList<>(dataModel.getTraces());
+        for (Trace trace : tracesCopy) {
             StoryResponse response = getStoryResponse(orgID, trace.getUuid(), reader);
             Story story = response.getStory();
             if (story.getChapters() != null) {

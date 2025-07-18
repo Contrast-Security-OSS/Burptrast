@@ -38,7 +38,7 @@ public class PortResolverTest {
         Components.getProtocolCombo().addItem("http");
         Components.getProtocolCombo().addItem("https");
         Components.getProtocolCombo().setSelectedItem(protocol);
-        Components.setPortNumberField(new TextField());
+        Components.setPortNumberField(new JTextField());
         Components.getPortNumberField().setText(port);
     }
 
